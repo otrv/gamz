@@ -8,6 +8,11 @@ if ! command -v rustup >/dev/null 2>&1 && [ ! -x "$HOME/.cargo/bin/rustup" ]; th
 fi
 export PATH="$HOME/.cargo/bin:$PATH"
 
+if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -q
+    sudo apt-get install -y -q libx11-xcb1 libxcursor1 libxi6 libxkbcommon-x11-0 libxrandr2 xvfb xdotool
+fi
+
 rustup toolchain install
 cargo fetch --locked
 

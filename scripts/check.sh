@@ -58,14 +58,24 @@ list_files 'Cargo.toml' '*/Cargo.toml' "${excluded[@]}" | xargs -0 awk '
 step "cargo fmt"
 cargo fmt --all -- --check
 
-step "cargo check"
-cargo check --workspace --all-targets --all-features --locked
+targets="$(awk -F'"' '/^targets[[:space:]]*=/ { for (i = 2; i < NF; i += 2) print $i }' rust-toolchain.toml)"
+if [ -z "$targets" ]; then
+    printf 'rust-toolchain.toml lists no deployment targets\n'
+    exit 1
+fi
+for target in $targets; do
+    step "cargo clippy --target $target"
+    cargo clippy --workspace --all-targets --all-features --locked --target "$target" -- -D warnings
+done
 
-step "cargo clippy"
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-
-step "cargo test"
-cargo test --workspace --all-features --locked
+host="$(rustc -vV | sed -n 's/^host: //p')"
+if printf '%s\n' $targets | grep -qx "$host"; then
+    step "cargo test"
+    cargo test --workspace --all-features --locked --target "$host"
+else
+    step "cargo test (host $host has no platform layer; skipping platform)"
+    cargo test --workspace --exclude platform --all-features --locked --target "$host"
+fi
 
 for crate in $unsafe_crates; do
     step "miri ($miri_toolchain): $crate"

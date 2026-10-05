@@ -9,7 +9,7 @@ Requires [rustup](https://rustup.rs); the exact toolchain is pinned in `rust-too
 ```sh
 rustup toolchain install
 git config core.hooksPath .githooks
-cargo run -p gamz
+cargo run -p platform
 scripts/check.sh
 ```
 

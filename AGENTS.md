@@ -21,12 +21,12 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 
 | Layer | Owns |
 |---|---|
-| `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions |
-| crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) |
+| `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions; the deployment targets |
+| crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) or `platform` (binary) |
 | `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
-| `scripts/check.sh` | no comments starting a line except SAFETY contracts; no inner `#![allow]`; no `#[expect]` in any form; every crate except the unsafe crates (`unsafe_crates`) inherits the workspace lints; fmt, check, Clippy, and tests; Miri tests for the unsafe crates on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
+| `scripts/check.sh` | no comments starting a line except SAFETY contracts; no inner `#![allow]`; no `#[expect]` in any form; every crate except the unsafe crates (`unsafe_crates`) inherits the workspace lints; fmt; Clippy for every deployment target; tests on the host, including `platform` only when the host is a deployment target; Miri tests for the unsafe crates on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
 | this file | working rules and design rules |
 
