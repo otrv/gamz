@@ -26,18 +26,22 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
-| `scripts/check.sh` | no comments starting a line except SAFETY contracts; no inner `#![allow]`; no `#[expect]` in any form; every crate except the unsafe crates (`unsafe_crates`) inherits the workspace lints; fmt; Clippy for every deployment target; tests on the host, including `platform` only when the host is a deployment target; Miri tests for the unsafe crates on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
+| `scripts/check.sh` | fmt; Clippy for every deployment target; tests on the host, including `platform` only when the host is a deployment target; Miri tests for the unsafe crates on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
-| this file | working rules and design rules |
+| this file | working rules and design rules, including configuration correctness, comments, and local lint suppressions not caught by static checks |
 
 Configured checks are fatal and have no local escape hatches. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
+
+Keep `scripts/check.sh` a runner for standard tools, not a home for custom source checks or duplicated lint policy. Do not add automated checks that validate repository configuration itself. Configuration correctness, including lint inheritance and deployment targets, belongs in review; consuming configuration to run tools does not require a separate validation layer.
+
+Review must reject local lint suppressions not caught by compiler or Clippy policy, including inner `#![allow]`, `#[expect]`, and their `cfg_attr` forms.
 
 ## Working rules
 
 - Run `scripts/check.sh` after changing anything. Work is not done until it passes. Never bypass the hook with `--no-verify`.
 - When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central change to the user instead of dodging it locally.
 - Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
-- Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints.
+- Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints; check this when reviewing manifest changes.
 - Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in an unsafe crate exercise every unsafe block.
 - Upgrade the toolchain deliberately: change the exact pin (or `miri_toolchain`), run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
@@ -52,7 +56,7 @@ Configured checks are fatal and have no local escape hatches. If a diagnostic is
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
-- No comments. Intent belongs in names, types, assertions, and structure. `scripts/check.sh` sees only comments that start a line; trailing comments and `#[doc = "..."]` attributes are equally forbidden.
+- No comments, including trailing comments and `#[doc = "..."]` attributes. Intent belongs in names, types, assertions, and structure. This rule is enforced in review.
 - The only exception is a `// SAFETY:` contract, or a `# Safety` doc section on an `unsafe fn`, that states the proof obligation making the operation sound.
 
 ### Invariants
