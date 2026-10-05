@@ -22,10 +22,10 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | Layer | Owns |
 |---|---|
 | `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions |
-| `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
+| `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
-| `scripts/check.sh` | no comments starting a line except SAFETY contracts; no inner `#![allow]`; no `#[expect]` in any form; every crate inherits the workspace lints; fmt, check, Clippy, and tests with `--locked` |
+| `scripts/check.sh` | no comments starting a line except SAFETY contracts; no inner `#![allow]`; no `#[expect]` in any form; every crate except the unsafe crates (`unsafe_crates`) inherits the workspace lints; fmt, check, Clippy, and tests; Miri tests for the unsafe crates on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
 | this file | working rules and design rules |
 
@@ -37,8 +37,8 @@ Configured checks are fatal and have no local escape hatches. If a diagnostic is
 - When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central change to the user instead of dodging it locally.
 - Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
 - Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints.
-- Unsafe code is forbidden in every crate. Designating a low-level crate for FFI, memory mapping, allocators, or hardware access is a central policy change that needs the user's approval.
-- Upgrade the toolchain deliberately: change the exact pin, run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
+- Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in an unsafe crate exercise every unsafe block.
+- Upgrade the toolchain deliberately: change the exact pin (or `miri_toolchain`), run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
 ## Design rules

@@ -11,6 +11,9 @@ step() {
     printf '==> %s\n' "$1"
 }
 
+unsafe_crates="game-memory"
+miri_toolchain="nightly-2026-10-01"
+
 step "comments: only SAFETY contracts may be written as comments"
 list_files '*.rs' | xargs -0 awk '
     FNR == 1 { contract = 0 }
@@ -33,8 +36,12 @@ list_files '*.rs' | xargs -0 awk '
     END { exit failed }
 ' /dev/null
 
-step "manifests: every package inherits the workspace lint policy"
-list_files 'Cargo.toml' '*/Cargo.toml' | xargs -0 awk '
+step "manifests: every package except the unsafe crates inherits the workspace lint policy"
+excluded=()
+for crate in $unsafe_crates; do
+    excluded+=(":!crates/$crate/Cargo.toml")
+done
+list_files 'Cargo.toml' '*/Cargo.toml' "${excluded[@]}" | xargs -0 awk '
     function finish() {
         if (file != "" && package && !inherits) {
             printf "%s: missing [lints] workspace = true\n", file
@@ -59,5 +66,11 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 step "cargo test"
 cargo test --workspace --all-features --locked
+
+for crate in $unsafe_crates; do
+    step "miri ($miri_toolchain): $crate"
+    rustup toolchain install "$miri_toolchain" --profile minimal --component miri,rust-src --no-self-update >/dev/null 2>&1
+    cargo "+$miri_toolchain" miri test -p "$crate" --all-features --locked
+done
 
 step "all checks passed"

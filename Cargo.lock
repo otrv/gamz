@@ -3,5 +3,9 @@
 version = 4
 
 [[package]]
+name = "game-memory"
+version = "0.1.0"
+
+[[package]]
 name = "gamz"
 version = "0.1.0"
