@@ -1,0 +1,12 @@
+[package]
+name = "game"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+game-core = { path = "../game-core" }
+game-memory = { path = "../game-memory" }
+
+[lints]
+workspace = true

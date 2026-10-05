@@ -22,6 +22,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | Layer | Owns |
 |---|---|
 | `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions |
+| crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) |
 | `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
@@ -42,6 +43,13 @@ Configured checks are fatal and have no local escape hatches. If a diagnostic is
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
 ## Design rules
+
+### Layers
+- The platform owns execution, the outside world, and the bytes of game memory, but never interprets those bytes. The game owns their layout, initialization, and meaning, and all game rules. `game-core` owns the invariants of the reusable mechanisms it provides.
+- Platform and third-party library types never appear in game-side interfaces; the game expresses intent, not backend mechanism. Target-specific code and platform libraries stay inside the platform module for their target.
+- Game-side code gets memory only from `GameMemory`: long-lived state inside the persistent root, frame scratch from the transient `Arena`, always with visible capacity. Game-side crates (`game-core`, `game-memory`, `game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and depend only on crates that use neither.
+- `game-core` holds only mechanisms whose semantics are independent of this game and already justified by use in `game`.
+- Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
 - No comments. Intent belongs in names, types, assertions, and structure. `scripts/check.sh` sees only comments that start a line; trailing comments and `#[doc = "..."]` attributes are equally forbidden.
