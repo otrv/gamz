@@ -18,6 +18,10 @@ pub struct PlatformApi {
 
 #[derive(Debug)]
 pub enum StartupError {
+    InsufficientPersistentMemory {
+        required: usize,
+        available: usize,
+    },
     File {
         path: &'static str,
         error: FileError,
@@ -30,6 +34,13 @@ pub enum StartupError {
 impl fmt::Display for StartupError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InsufficientPersistentMemory {
+                required,
+                available,
+            } => write!(
+                f,
+                "insufficient persistent game memory: {available} bytes available, {required} required"
+            ),
             Self::File { path, error } => write!(f, "{path}: file load failed: {error:?}"),
             Self::InvalidAsset { path } => write!(f, "{path}: invalid asset"),
         }
