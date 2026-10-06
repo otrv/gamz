@@ -41,6 +41,7 @@ Review must reject local lint suppressions not caught by compiler or Clippy poli
 - Run `scripts/check.sh` after changing anything. Work is not done until it passes. Never bypass the hook with `--no-verify`.
 - When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central change to the user instead of dodging it locally.
 - Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
+- Get the user's approval before creating a crate, changing a crate's public interface, adding a dependency between workspace crates, or adding an external crate dependency.
 - Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints; check this when reviewing manifest changes.
 - Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in an unsafe crate exercise every unsafe block.
 - Upgrade the toolchain deliberately: change the exact pin (or `miri_toolchain`), run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
@@ -49,15 +50,20 @@ Review must reject local lint suppressions not caught by compiler or Clippy poli
 ## Design rules
 
 ### Layers
-- The platform owns execution, the outside world, and the bytes of game memory, but never interprets those bytes. The game owns their layout, initialization, and meaning, and all game rules. `game-core` owns the invariants of the reusable mechanisms it provides.
+- Keep the platform a thin host adapter: it owns execution, access to the outside world, and the bytes of game memory, but never interprets those bytes or implements game-side mechanisms. The game owns their layout, initialization, and meaning, and all game rules. `game-core` owns the invariants of the reusable mechanisms it provides.
+- `platform-api` is the shared boundary: contracts and their validation only, never game mechanisms or backend implementations. Game/platform boundary signatures use its types; static game entrypoints may additionally expose an opaque game-owned state root.
+- Only `game` directly depends on `game-core`. Platform and renderer crates use `platform-api`, never `game-core` or `game-memory`.
 - Platform and third-party library types never appear in game-side interfaces; the game expresses intent, not backend mechanism. Target-specific code and platform libraries stay inside the platform module for their target.
-- Game-side code gets memory only from `GameMemory`: long-lived state inside the persistent root, frame scratch from the transient `Arena`, always with visible capacity. Game-side crates (`game-core`, `game-memory`, `game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and depend only on crates that use neither.
+- Platform supplies bounded persistent and transient byte regions; game-side code constructs arenas over them. Long-lived state stays inside the persistent root; frame scratch resets together. Game-side crates (`platform-api`, `game-core`, `game-memory`, `game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and depend only on crates that use neither.
 - `game-core` holds only mechanisms whose semantics are independent of this game and already justified by use in `game`.
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
 - No comments, including trailing comments and `#[doc = "..."]` attributes. Intent belongs in names, types, assertions, and structure. This rule is enforced in review.
 - The only exception is a `// SAFETY:` contract, or a `# Safety` doc section on an `unsafe fn`, that states the proof obligation making the operation sound.
+
+### Documentation
+- Code is the source of truth. Do not document demo games or restate what is evident in code; keep documentation to non-obvious rationale, setup, policy, and legal requirements.
 
 ### Invariants
 - Make invalid states unrepresentable: newtypes for confusable values such as IDs, indices, units, and coordinate spaces; enums instead of related booleans or `Option` combinations; private fields and constructors that reject invalid states.
