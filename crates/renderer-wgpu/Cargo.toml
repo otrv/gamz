@@ -1,0 +1,13 @@
+[package]
+name = "renderer-wgpu"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+platform-api = { path = "../platform-api" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["std", "vulkan", "metal", "dx12", "webgpu", "wgsl"] }
+num-traits = { version = "0.2", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true
