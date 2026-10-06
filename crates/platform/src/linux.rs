@@ -4,7 +4,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::time::{Duration, Instant};
 
 use game_core::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
-use game_memory::{Arena, GameMemory, PersistentMemory};
+use game_memory::{Arena, GameMemory};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::error::{EventLoopError, OsError};
@@ -14,7 +14,6 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::{Window, WindowId};
 
-const PERSISTENT_MEMORY_BYTES: usize = 64 * 1024 * 1024;
 const TRANSIENT_MEMORY_BYTES: usize = 256 * 1024 * 1024;
 const WINDOW_TITLE: &str = "gamz";
 const WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(1280.0, 720.0);
@@ -106,12 +105,9 @@ impl ApplicationHandler for Platform {
 pub(crate) fn run() -> Result<(), PlatformError> {
     let mut reservation = Vec::<u8>::new();
     reservation
-        .try_reserve_exact(PERSISTENT_MEMORY_BYTES + TRANSIENT_MEMORY_BYTES)
+        .try_reserve_exact(TRANSIENT_MEMORY_BYTES)
         .map_err(PlatformError::Memory)?;
-    let (persistent_bytes, transient_bytes) = reservation.spare_capacity_mut()
-        [..PERSISTENT_MEMORY_BYTES + TRANSIENT_MEMORY_BYTES]
-        .split_at_mut(PERSISTENT_MEMORY_BYTES);
-    let mut persistent = PersistentMemory::new(persistent_bytes);
+    let transient_bytes = &mut reservation.spare_capacity_mut()[..TRANSIENT_MEMORY_BYTES];
     let mut event_loop = EventLoop::new().map_err(PlatformError::EventLoop)?;
     let mut platform = Platform {
         window: WindowState::Opening,
@@ -148,7 +144,6 @@ pub(crate) fn run() -> Result<(), PlatformError> {
         platform.controller.start_frame();
         game::update(
             GameMemory {
-                persistent: persistent.reborrow(),
                 transient: Arena::new(transient_bytes),
             },
             &input,

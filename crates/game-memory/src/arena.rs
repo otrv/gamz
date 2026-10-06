@@ -50,10 +50,6 @@ impl<'m> Arena<'m> {
         unsafe { &mut *bytes.as_mut_ptr().cast() }
     }
 
-    pub(crate) fn into_free(self) -> &'m mut [MaybeUninit<u8>] {
-        self.free
-    }
-
     fn take(&mut self, size: usize, align: usize) -> &'m mut [MaybeUninit<u8>] {
         let free = mem::take(&mut self.free);
         let available = free.len();
