@@ -7,6 +7,7 @@ publish.workspace = true
 [dependencies]
 game-core = { path = "../game-core" }
 game-memory = { path = "../game-memory" }
+platform-api = { path = "../platform-api" }
 
 [lints]
 workspace = true

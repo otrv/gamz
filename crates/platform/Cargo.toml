@@ -6,11 +6,13 @@ publish.workspace = true
 
 [dependencies]
 game = { path = "../game" }
-game-core = { path = "../game-core" }
-game-memory = { path = "../game-memory" }
+platform-api = { path = "../platform-api" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-winit = { version = "0.30.13", default-features = false, features = ["x11"] }
+renderer-wgpu = { path = "../renderer-wgpu" }
+pollster = { version = "0.4.0", default-features = false }
+rustix = { version = "1.1.5", default-features = false, features = ["std", "fs"] }
+winit = { version = "0.30.13", default-features = false, features = ["x11", "rwh_06"] }
 
 [lints]
 workspace = true

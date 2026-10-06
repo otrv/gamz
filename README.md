@@ -13,6 +13,12 @@ cargo run -p platform
 scripts/check.sh
 ```
 
-## Code style
+Run from the repository root with an X11 display and a supported GPU driver.
 
-[AGENTS.md](AGENTS.md) defines the code style and maps every rule to the layer that enforces it: compiler and Clippy policy, `scripts/check.sh` (run by the pre-commit hook and CI), and the `/gamz-review` skill for rules that need judgment.
+## Asset provenance
+
+The font assets derive from DejaVu Sans. Its DejaVu/Bitstream license is included in `assets/FONT-LICENSE.txt`. The sprite artwork is original to this project.
+
+## Contributing
+
+[AGENTS.md](AGENTS.md) defines the project's design and enforcement policies.

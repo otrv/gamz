@@ -1,10 +1,18 @@
 use std::collections::TryReserveError;
 use std::fmt;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::fs::File;
+use std::io::{self, Read};
+use std::num::NonZeroU32;
+use std::path::{Component, Path};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use game_core::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
-use game_memory::{Arena, GameMemory};
+use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
+use platform_api::memory::{PersistentMemory, TransientMemory};
+use platform_api::services::{FileError, MAX_FILE_BYTES, PlatformApi, StartupError};
+use platform_api::timing::DeltaTime;
+use renderer_wgpu::{Renderer, RendererError};
+use rustix::fs::{Mode, OFlags};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::error::{EventLoopError, OsError};
@@ -15,16 +23,20 @@ use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::{Window, WindowId};
 
 const TRANSIENT_MEMORY_BYTES: usize = 256 * 1024 * 1024;
+const PERSISTENT_MEMORY_BYTES: usize = 64 * 1024;
+const MAX_PATH_BYTES: usize = 256;
+const MAX_READ_ATTEMPTS: usize = 4096;
 const WINDOW_TITLE: &str = "gamz";
 const WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(1280.0, 720.0);
-const FALLBACK_REFRESH_MILLIHERTZ: NonZeroU32 = NonZeroU32::new(60_000).unwrap();
-const NANOS_PER_CYCLE_AT_ONE_MILLIHERTZ: u64 = 1_000_000_000_000;
+const MAX_FRAMES_PER_SECOND: NonZeroU32 = NonZeroU32::new(60).unwrap();
 
 #[derive(Debug)]
 pub(crate) enum PlatformError {
     Memory(TryReserveError),
     EventLoop(EventLoopError),
     Window(OsError),
+    Renderer(RendererError),
+    Startup(StartupError),
 }
 
 impl fmt::Display for PlatformError {
@@ -33,16 +45,15 @@ impl fmt::Display for PlatformError {
             Self::Memory(error) => write!(f, "cannot reserve game memory: {error}"),
             Self::EventLoop(error) => write!(f, "cannot start the event loop: {error}"),
             Self::Window(error) => write!(f, "cannot open the window: {error}"),
+            Self::Renderer(error) => write!(f, "renderer: {error}"),
+            Self::Startup(error) => write!(f, "game initialization: {error}"),
         }
     }
 }
 
 enum WindowState {
     Opening,
-    Open {
-        window: Window,
-        frame_duration: Option<Duration>,
-    },
+    Open(Arc<Window>),
     Failed(OsError),
 }
 
@@ -60,10 +71,7 @@ impl ApplicationHandler for Platform {
             .with_title(WINDOW_TITLE)
             .with_inner_size(WINDOW_SIZE);
         self.window = match event_loop.create_window(attributes) {
-            Ok(window) => WindowState::Open {
-                window,
-                frame_duration: None,
-            },
+            Ok(window) => WindowState::Open(Arc::new(window)),
             Err(error) => {
                 event_loop.exit();
                 WindowState::Failed(error)
@@ -75,11 +83,6 @@ impl ApplicationHandler for Platform {
         match event {
             WindowEvent::CloseRequested | WindowEvent::Destroyed => event_loop.exit(),
             WindowEvent::Focused(false) => self.controller.release_all(),
-            WindowEvent::Moved(_) | WindowEvent::ScaleFactorChanged { .. } => {
-                if let WindowState::Open { frame_duration, .. } = &mut self.window {
-                    *frame_duration = None;
-                }
-            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -90,6 +93,9 @@ impl ApplicationHandler for Platform {
                     },
                 ..
             } => {
+                if key == KeyCode::Escape && state == ElementState::Pressed {
+                    event_loop.exit();
+                }
                 if let Some(button) = controller_button(&mut self.controller, key) {
                     button.record(match state {
                         ElementState::Pressed => ButtonPosition::Down,
@@ -103,6 +109,10 @@ impl ApplicationHandler for Platform {
 }
 
 pub(crate) fn run() -> Result<(), PlatformError> {
+    let mut persistent = Vec::<u8>::new();
+    persistent
+        .try_reserve_exact(PERSISTENT_MEMORY_BYTES)
+        .map_err(PlatformError::Memory)?;
     let mut reservation = Vec::<u8>::new();
     reservation
         .try_reserve_exact(TRANSIENT_MEMORY_BYTES)
@@ -113,52 +123,148 @@ pub(crate) fn run() -> Result<(), PlatformError> {
         window: WindowState::Opening,
         controller: ControllerInput::default(),
     };
-    let mut next_frame = Instant::now();
+    while matches!(platform.window, WindowState::Opening) {
+        if let PumpStatus::Exit(code) =
+            event_loop.pump_app_events(Some(Duration::from_millis(16)), &mut platform)
+        {
+            return exit_result(platform.window, code);
+        }
+    }
+    let WindowState::Open(window) = &platform.window else {
+        return exit_result(platform.window, 0);
+    };
+    let mut size = window.inner_size();
+    let mut renderer =
+        pollster::block_on(Renderer::new(Arc::clone(window), size.width, size.height))
+            .map_err(PlatformError::Renderer)?;
+    let state = {
+        let (state, uploads) = game::initialize(
+            PersistentMemory {
+                bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
+            },
+            TransientMemory {
+                bytes: transient_bytes,
+            },
+            &PlatformApi { load_entire_file },
+        )
+        .map_err(PlatformError::Startup)?;
+        for upload in uploads {
+            renderer
+                .upload_texture(upload)
+                .map_err(PlatformError::Renderer)?;
+        }
+        state
+    };
+    let frame_interval =
+        Duration::from_nanos(1_000_000_000_u64.div_ceil(u64::from(MAX_FRAMES_PER_SECOND.get())));
+    let mut previous_frame = Instant::now();
+    let mut next_frame = previous_frame + frame_interval;
+    let mut next_stats = next_frame;
     loop {
         let timeout = next_frame.saturating_duration_since(Instant::now());
         if let PumpStatus::Exit(code) = event_loop.pump_app_events(Some(timeout), &mut platform) {
-            return match (platform.window, code) {
-                (WindowState::Failed(error), _) => Err(PlatformError::Window(error)),
-                (WindowState::Opening | WindowState::Open { .. }, 0) => Ok(()),
-                (WindowState::Opening | WindowState::Open { .. }, code) => {
-                    Err(PlatformError::EventLoop(EventLoopError::ExitFailure(code)))
-                }
-            };
+            return exit_result(platform.window, code);
         }
-        let WindowState::Open {
-            window,
-            frame_duration,
-        } = &mut platform.window
-        else {
+        let WindowState::Open(window) = &platform.window else {
             continue;
         };
-        let frame_duration = *frame_duration.get_or_insert_with(|| monitor_frame_duration(window));
-        let now = Instant::now();
-        if now < next_frame {
+        if Instant::now() < next_frame {
             continue;
         }
+        let current_size = window.inner_size();
+        if size != current_size {
+            size = current_size;
+            renderer
+                .resize(size.width, size.height)
+                .map_err(PlatformError::Renderer)?;
+        }
+        let now = Instant::now();
         let input = FrameInput {
-            frame_duration,
+            dt: DeltaTime::from_elapsed(now.duration_since(previous_frame)),
             controller: platform.controller,
         };
+        previous_frame = now;
         platform.controller.start_frame();
-        game::update(
-            GameMemory {
-                transient: Arena::new(transient_bytes),
+        let frame = game::update(
+            state,
+            TransientMemory {
+                bytes: transient_bytes,
             },
             &input,
         );
-        next_frame = (next_frame + frame_duration).max(now);
+        window.pre_present_notify();
+        if let Some(stats) = renderer.draw(&frame).map_err(PlatformError::Renderer)?
+            && now >= next_stats
+        {
+            println!(
+                "commands={} quads={} batches={} vertex_bytes={}",
+                stats.commands, stats.quads, stats.batches, stats.vertex_bytes
+            );
+            next_stats = now + Duration::from_secs(1);
+        }
+        next_frame = now + frame_interval;
     }
 }
 
-fn monitor_frame_duration(window: &Window) -> Duration {
-    let refresh_millihertz = window
-        .current_monitor()
-        .and_then(|monitor| monitor.refresh_rate_millihertz())
-        .and_then(NonZeroU32::new)
-        .unwrap_or(FALLBACK_REFRESH_MILLIHERTZ);
-    Duration::from_nanos(NANOS_PER_CYCLE_AT_ONE_MILLIHERTZ / NonZeroU64::from(refresh_millihertz))
+fn exit_result(window: WindowState, code: i32) -> Result<(), PlatformError> {
+    match (window, code) {
+        (WindowState::Failed(error), _) => Err(PlatformError::Window(error)),
+        (_, 0) => Ok(()),
+        (_, code) => Err(PlatformError::EventLoop(EventLoopError::ExitFailure(code))),
+    }
+}
+
+fn load_entire_file(path: &str, output: &mut [u8]) -> Result<usize, FileError> {
+    if path.is_empty()
+        || path.len() > MAX_PATH_BYTES
+        || path.as_bytes().contains(&0)
+        || !Path::new(path)
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return Err(FileError::InvalidPath);
+    }
+    let descriptor = rustix::fs::open(
+        path,
+        OFlags::RDONLY | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|error| file_error(io::Error::from(error).kind()))?;
+    let mut file = File::from(descriptor);
+    let metadata = file.metadata().map_err(|error| file_error(error.kind()))?;
+    if !metadata.is_file() {
+        return Err(FileError::Unsupported);
+    }
+    let capacity = output.len().min(MAX_FILE_BYTES);
+    if metadata.len() > u64::try_from(capacity).unwrap() {
+        return Err(FileError::TooLarge);
+    }
+    let mut len = 0;
+    for _ in 0..MAX_READ_ATTEMPTS {
+        let mut extra = [0_u8; 1];
+        let at_capacity = len == capacity;
+        let destination = if at_capacity {
+            &mut extra[..]
+        } else {
+            &mut output[len..capacity]
+        };
+        match file.read(destination) {
+            Ok(0) => return Ok(len),
+            Ok(_) if at_capacity => return Err(FileError::TooLarge),
+            Ok(count) => len += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(file_error(error.kind())),
+        }
+    }
+    Err(FileError::Io)
+}
+
+fn file_error(kind: io::ErrorKind) -> FileError {
+    match kind {
+        io::ErrorKind::NotFound => FileError::NotFound,
+        io::ErrorKind::PermissionDenied => FileError::PermissionDenied,
+        _ => FileError::Io,
+    }
 }
 
 fn controller_button(controller: &mut ControllerInput, key: KeyCode) -> Option<&mut ButtonState> {
