@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/../../../.." && pwd)"
+run_dir="${GAMZ_VERIFY_RUN_DIR:-/tmp/gamz-verify-${UID}}"
+session="${GAMZ_VERIFY_SESSION:-gamz-verify-${UID}}"
+display="${GAMZ_VERIFY_DISPLAY:-:99}"
+artifacts="${GAMZ_VERIFY_ARTIFACTS:-$root/.amp/in/artifacts/game-verification}"
+
+window_id() {
+    DISPLAY="$display" xdotool search --name '^gamz$' 2>/dev/null | head -n 1
+}
+
+launch() {
+    if tmux has-session -t "$session" 2>/dev/null; then
+        printf 'verification session already exists: %s\n' "$session" >&2
+        exit 1
+    fi
+    rm -rf "$run_dir"
+    mkdir -p "$run_dir" "$artifacts"
+    cargo build -p platform
+    tmux new-session -d -s "$session" bash -lc '
+        set -euo pipefail
+        export DISPLAY="$1"
+        Xvfb "$DISPLAY" -screen 0 1280x720x24 >"$2/xvfb.log" 2>&1 &
+        xvfb=$!
+        trap "kill $xvfb 2>/dev/null || true" EXIT
+        cd "$3"
+        cargo run -q -p platform >"$2/game.log" 2>&1
+    ' bash "$display" "$run_dir" "$root"
+    for _ in $(seq 1 200); do
+        if window_id >/dev/null; then
+            printf 'ready: session=%s display=%s window=%s\n' "$session" "$display" "$(window_id)"
+            return
+        fi
+        if ! tmux has-session -t "$session" 2>/dev/null; then
+            cat "$run_dir/game.log" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+    cat "$run_dir/game.log" >&2
+    exit 1
+}
+
+doctor() {
+    tmux has-session -t "$session"
+    local window
+    window="$(window_id)"
+    test -n "$window"
+    grep -q 'wgpu adapter:' "$run_dir/game.log"
+    printf 'healthy: session=%s display=%s window=%s\n' "$session" "$display" "$window"
+}
+
+drive() {
+    doctor
+    local window stamp
+    window="$(window_id)"
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    DISPLAY="$display" xdotool windowfocus "$window"
+    import -display "$display" -window "$window" "$artifacts/${stamp}-before.png"
+    : >"$artifacts/${stamp}-actions.txt"
+    for key in w a s d Up Left Down Right q e space; do
+        printf '%s\n' "$key" >>"$artifacts/${stamp}-actions.txt"
+        DISPLAY="$display" xdotool key --window "$window" "$key" 2>/dev/null
+        sleep 0.15
+    done
+    import -display "$display" -window "$window" "$artifacts/${stamp}-after.png"
+    printf '%s\n' Escape >>"$artifacts/${stamp}-actions.txt"
+    DISPLAY="$display" xdotool key --window "$window" Escape 2>/dev/null || true
+    for _ in $(seq 1 50); do
+        if ! tmux has-session -t "$session" 2>/dev/null; then
+            break
+        fi
+        sleep 0.1
+    done
+    if tmux has-session -t "$session" 2>/dev/null; then
+        printf 'game did not exit after Escape\n' >&2
+        exit 1
+    fi
+    cp "$run_dir/game.log" "$artifacts/${stamp}-game.log"
+    printf 'evidence: %s\n' "$artifacts/${stamp}-before.png"
+    printf 'evidence: %s\n' "$artifacts/${stamp}-actions.txt"
+    printf 'evidence: %s\n' "$artifacts/${stamp}-after.png"
+    printf 'evidence: %s\n' "$artifacts/${stamp}-game.log"
+}
+
+cleanup() {
+    if tmux has-session -t "$session" 2>/dev/null; then
+        tmux kill-session -t "$session"
+    fi
+    rm -rf "$run_dir"
+    printf 'cleaned: %s\n' "$session"
+}
+
+case "${1:-}" in
+    launch|doctor|drive|cleanup) "$1" ;;
+    *) printf 'usage: %s {launch|doctor|drive|cleanup}\n' "$0" >&2; exit 2 ;;
+esac
