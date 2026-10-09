@@ -1,6 +1,7 @@
 #![no_std]
 
 use game_memory::Arena;
+use platform_api::audio::{AudioBuffer, StereoFrame};
 use platform_api::input::FrameInput;
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{Canvas, Color, Frame, TextureUpload};
@@ -37,4 +38,8 @@ pub fn update<'a>(
         clear: Color(0, 0, 0, 255),
         commands: &[],
     }
+}
+
+pub fn update_audio(_state: &mut GameState, mut buffer: AudioBuffer<'_>) {
+    buffer.frames_mut().fill(StereoFrame::default());
 }
