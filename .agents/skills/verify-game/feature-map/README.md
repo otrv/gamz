@@ -1,9 +1,9 @@
 # gamz verification feature map
 
-This map covers the user-visible surface supplied by the Linux platform and the current boilerplate game. Read every entry affected by a change. New gameplay screens, states, input paths, persistence, and asset-loading flows need their own entries with exact expected visible and side-effect outcomes.
+Use CLI for game behavior. Use Linux window driving only for rendering and platform behavior. Add entries as gameplay, persistence, assets, or audio become observable; record concrete input sequences and expected outputs, not just successful process execution.
 
-| Feature | Entry |
-| --- | --- |
-| Window creation and frame presentation | [Launching and rendering](launch-and-render.md) |
-| Controller keyboard mapping | [Controller input](controller-input.md) |
-| User-requested exit | [Exit behavior](exit.md) |
+| Feature | Entry | Default surface |
+| --- | --- | --- |
+| Initialization and frame output; optional pixel presentation | [Initialization and rendering](launch-and-render.md) | CLI; Linux for rendering |
+| Controller values and controlled time; keyboard integration | [Controller input](controller-input.md) | CLI; Linux for keyboard mapping |
+| EOF/errors; Escape and window close | [Exit behavior](exit.md) | CLI; Linux for window lifecycle |

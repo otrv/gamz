@@ -1,59 +1,79 @@
 ---
 name: verify-game
-description: Run the current gamz game through the Linux platform, exercise its keyboard controls, and preserve visual and runtime proof.
+description: "Verifies gamz game behavior through controlled CLI inputs and complete initialization/frame outputs. Uses the graphical Linux platform only for rendering, keyboard/window integration, or other behavior outside the game."
 ---
 
 # Verify a gamz game
 
-Use this skill after changing user-visible game behavior in `crates/game`. It drives the production `linux` binary rather than calling game functions directly. Unit tests remain appropriate for pure game rules, but they do not replace this run.
+Use the production `cli` entrypoint by default for game behavior. Supply complete `FrameInput` values and inspect initialization uploads and returned frames. Do not require a window, GPU, screenshots, or wall-clock timing for game tests. Use another platform only when the behavior under test is outside the game boundary: rendering, platform services, keyboard/window integration, or future audio playback.
 
 ## Launch
 
-The game is a Linux/X11 application. The checked-in helper builds the platform, then creates a private Xvfb display in a tmux session and waits for the `gamz` window:
+Run from the repository root:
 
 ```sh
 .agents/skills/verify-game/scripts/verify-game launch
 ```
 
-It uses `cargo run -p platform --features linux --bin linux --locked`, so the pinned Rust toolchain and the project's locked dependencies are required. The game is ready only when the command prints a `ready:` line with a window ID. Do not use an existing desktop window or start a second verifier at the same time: the default run owns X display `:99` and tmux session `gamz-verify-$UID`.
+This builds the CLI with locked dependencies and no graphical features into `target/verify-game`. Linux, Python 3, and the pinned Rust toolchain are required; X11 and a GPU are not. Each drive owns a fresh process, supplies steps serially, then closes stdin. Relaunch a process to reset game state. Re-run `launch` after source changes.
 
 ## Doctor
-
-Before driving, or whenever a run behaves unexpectedly, check the instance that this skill started:
 
 ```sh
 .agents/skills/verify-game/scripts/verify-game doctor
 ```
 
-It confirms the owned tmux session, the `gamz` window on the owned display, and a WGPU adapter line in that run's log. A failed doctor means do not send input. Run cleanup, inspect the named log if needed, and launch again.
+Doctor launches the built binary without display variables, checks its flushed initialization response, closes stdin, and requires exit status zero. Every drive also checks initialization on its own process before sending input. After an unexpected result, retain the evidence, fix the cause, rebuild if needed, and run doctor again. Never continue a failed session.
 
 ## Drive
 
-Read every relevant feature-map entry before choosing coverage. The helper exercises every platform keyboard binding (`WASD`, arrow keys, `Q`, `E`, Space, Escape), captures the game before Escape, records the action order, and copies its runtime log:
+Read the relevant feature-map entries, then run:
 
 ```sh
 .agents/skills/verify-game/scripts/verify-game drive
 ```
 
-Evidence is retained under `.amp/in/artifacts/game-verification/` even after cleanup. For a changed feature, inspect both PNGs and the action transcript. Prove the real user path: capture the input that causes the result as well as its visible result. Also verify side effects such as files, persistent state, or log output when the feature has them. Do not use game internals, test-only entry points, or mocks to claim platform behavior works.
+The baseline drive sends press, held, and released values for all twelve buttons, multi-transition input, and zero/fractional/maximum timesteps. It requires a flushed response before sending the next step, compares replay output, checks both sides of the input-size limit, EOF, and fail-fast errors, and records inputs, outputs, diagnostics, and exit statuses under the printed `.amp/in/artifacts/game-verification/run-*` directory. Error probes require the expected diagnostic and nonzero termination while stdin remains open.
 
-The current boilerplate game deliberately clears to opaque black and has no gameplay response yet. Its proof is therefore a live `gamz` window that stays running after all mapped inputs, a black rendered frame before and after, and runtime stats in the copied log. When a game gains visible behavior, replace this baseline expectation in the relevant feature-map files with concrete screen and state expectations.
+After changing the helper, repeat `doctor` and `drive` with `PYTHONOPTIMIZE=1`; verification and replay must still execute. Response reads have a 15-second deadline and a 272 MiB byte limit, independent of pipe fragmentation. That byte budget accommodates the 64 MiB texture budget expanded to JSON byte arrays plus metadata.
+
+For a specific game path, drive the same binary with your own input sequence rather than changing the game or adding test-only hooks:
+
+```sh
+printf '%s\n' '{"dt":{"secs":0,"nanos":16666667},"controller":{"move_right":{"ended":"down","half_transitions":1}}}' | target/verify-game/debug/cli
+```
+
+Both `dt` and `controller` are required. Omitted buttons mean released with zero transitions **for that frame**; a held button must be supplied again with `ended: "down"` and `half_transitions: 0`. Supply release and multiple-transition counts explicitly. No hidden steps or real-time waits are needed. Asset paths resolve against the process working directory, so run from the intended asset root; use real assets or caller-created fixture files. `--persistent-bytes N` and `--transient-bytes N` exercise initialization with alternate capacities.
+
+The first output line contains complete texture uploads; each subsequent line is the returned frame. Texture IDs are supplied by the game, not acknowledged by the caller. Commands contain all fields, including text glyph geometry. Observe these outputs and any relevant file effects; never inspect opaque game memory. See `crates/platform/src/cli/input.rs` and `output.rs` for the wire representation.
+
+The current game ignores inputs and returns an empty black frame. The baseline therefore proves the transport, not gameplay responses or cross-machine determinism. When gameplay is added, update the feature map and baseline assertions with concrete sequences and independently expected results. Unit tests complement this live path; they do not replace it.
+
+## Rendering and platform behavior
+
+Only when the affected feature needs it, run:
+
+```sh
+.agents/skills/verify-game/scripts/verify-game linux
+```
+
+This builds the `linux` binary, owns a private Xvfb display for one bounded drive, checks the window/adapter/frame log, exercises mapped keyboard input, captures before/after images, sends Escape, and requires exit status zero. It requires `xvfb-run`, `xauth`, `xdotool`, ImageMagick `import`, and a usable WGPU driver. Inspect both printed-directory PNGs with `view_media` and inspect the log. CLI render commands do not prove rendered pixels. Window-manager close controls and focus/repeat behavior need their own live graphical actions when affected; the helper does not claim to test them.
 
 ## Cleanup
 
-Always tear down the owned instance, including after a failed attempt:
+Every drive closes or kills its owned process on completion or failure; the Linux wrapper also tears down Xvfb. No shared desktop or persistent service is used. Evidence survives cleanup:
 
 ```sh
 .agents/skills/verify-game/scripts/verify-game cleanup
 ```
 
-Cleanup kills only the tmux session that the helper created and removes its scratch logs. It never removes `.amp/in/artifacts/game-verification/` proof files.
+Before reporting, verify the named evidence files still exist. Preserve failing evidence and state limitations rather than replacing missing gameplay behavior with success assertions.
 
 ## Feature map
 
-Read the index and all entries affected by the change. Keep this map current as `crates/game` gains user-facing behavior; add a feature file before claiming that new behavior has been fully verified.
+Keep entries current as game behavior grows. Add a concrete input sequence and observable expectation before claiming coverage of a new feature.
 
 - [Feature-map index](feature-map/README.md)
-- [Launching and rendering](feature-map/launch-and-render.md)
-- [Controller input](feature-map/controller-input.md)
-- [Exit behavior](feature-map/exit.md)
+- [Initialization, frame output, and rendering](feature-map/launch-and-render.md)
+- [Controller input and timesteps](feature-map/controller-input.md)
+- [Exit and failure behavior](feature-map/exit.md)

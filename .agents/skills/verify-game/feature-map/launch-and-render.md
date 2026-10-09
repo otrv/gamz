@@ -1,19 +1,13 @@
-# Launching and rendering
+# Initialization, frame output, and rendering
 
-## Sub-features
+## Game path: CLI
 
-- A 1280 by 720 window titled `gamz` opens.
-- The game initializes and continuously presents frames.
-- The boilerplate frame is opaque black.
+Run `launch`, `doctor`, then `drive`. Expect an initialization record with `uploads: []`, followed by one frame per supplied input: canvas `[1280,720]`, clear `[0,0,0,255]`, and `commands: []`. No frames arrive without input. Inspect JSONL and status evidence; no display or GPU is needed.
 
-## How to get to it (user POV)
+Real asset reads use the same file service as Linux, relative to the working directory. The current game does not load assets or return textures, so live game verification cannot yet exercise those paths. When the game gains assets, add a real asset-loading run rather than claiming the empty baseline covers it.
 
-From the repository root, run `cargo run -p platform --features linux --bin linux --locked`. A user sees a window titled `gamz`.
+## Rendering path: Linux only when affected
 
-## Driving it with verify-game
+Run `.agents/skills/verify-game/scripts/verify-game linux`. The platform requests a 1280×720 logical inner window titled `gamz`, initializes WGPU, and continuously presents the black frame. The helper uses a private Xvfb display; software Vulkan may supply the adapter in an orb.
 
-Run `.agents/skills/verify-game/scripts/verify-game launch`, then `doctor`, then `drive`. Inspect the before and after PNG files printed by `drive`. Inspect the copied game log for `wgpu adapter:` and a `commands=0 quads=0` frame-stat line.
-
-## Gotchas
-
-The game needs an X11 display and a GPU driver. The helper supplies Xvfb; WGPU may use a software Vulkan driver in an orb. The current black frame is intentional, so a black screenshot proves presentation only, not future gameplay behavior.
+Inspect both `linux-before.png` and `linux-after.png` with `view_media`, and the retained `linux.log` for adapter and `commands=0 quads=0` stats. Require successful exit status. This proves pixel presentation and platform survival, not gameplay response. CLI output alone cannot verify rendering, scaling, clipping, GPU resource creation, or driver behavior.
