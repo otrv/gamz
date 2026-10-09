@@ -5,7 +5,7 @@ description: "Verifies gamz game behavior through controlled CLI inputs and comp
 
 # Verify a gamz game
 
-Use the production `cli` entrypoint by default for game behavior. Supply complete `FrameInput` values and inspect initialization uploads and returned frames. Do not require a window, GPU, screenshots, or wall-clock timing for game tests. Use another platform only when the behavior under test is outside the game boundary: rendering, platform services, keyboard/window integration, or future audio playback.
+Use the production `cli` entrypoint by default for game behavior. Supply complete `FrameInput` values or explicit audio requests and inspect initialization uploads and returned frames or samples. Do not require a window, GPU, screenshots, or wall-clock timing for game tests. Use another platform only when the behavior under test is outside the game boundary: rendering, platform services, keyboard/window integration, or audio playback.
 
 ## Launch
 
@@ -45,7 +45,7 @@ printf '%s\n' '{"dt":{"secs":0,"nanos":16666667},"controller":{"move_right":{"en
 
 Both `dt` and `controller` are required. Omitted buttons mean released with zero transitions **for that frame**; a held button must be supplied again with `ended: "down"` and `half_transitions: 0`. Supply release and multiple-transition counts explicitly. No hidden steps or real-time waits are needed. Asset paths resolve against the process working directory, so run from the intended asset root; use real assets or caller-created fixture files. `--persistent-bytes N` and `--transient-bytes N` exercise initialization with alternate capacities.
 
-The first output line contains complete texture uploads; each subsequent line is the returned frame. Texture IDs are supplied by the game, not acknowledged by the caller. Commands contain all fields, including text glyph geometry. Observe these outputs and any relevant file effects; never inspect opaque game memory. See `crates/platform/src/cli/input.rs` and `output.rs` for the wire representation.
+The first output line contains complete texture uploads; each subsequent line is the returned visual frame or audio samples. Texture IDs are supplied by the game, not acknowledged by the caller. Commands contain all fields, including text glyph geometry. Observe these outputs and any relevant file effects; never inspect opaque game memory. See `crates/platform/src/cli/input.rs` and `output.rs` for the wire representation. For manual audio requests and playback verification, follow [Audio](feature-map/audio.md); the baseline `drive` covers visual frames only.
 
 The current game ignores inputs and returns an empty black frame. The baseline therefore proves the transport, not gameplay responses or cross-machine determinism. When gameplay is added, update the feature map and baseline assertions with concrete sequences and independently expected results. Unit tests complement this live path; they do not replace it.
 
@@ -57,7 +57,7 @@ Only when the affected feature needs it, run:
 .agents/skills/verify-game/scripts/verify-game linux
 ```
 
-This builds the `linux` binary, owns a private Xvfb display for one bounded drive, checks the window/adapter/frame log, exercises mapped keyboard input, captures before/after images, sends Escape, and requires exit status zero. It requires `xvfb-run`, `xauth`, `xdotool`, ImageMagick `import`, and a usable WGPU driver. Inspect both printed-directory PNGs with `view_media` and inspect the log. CLI render commands do not prove rendered pixels. Window-manager close controls and focus/repeat behavior need their own live graphical actions when affected; the helper does not claim to test them.
+This builds the `linux` binary, owns a private Xvfb display for one bounded drive, checks the window/adapter/frame log, exercises mapped keyboard input, captures before/after images, sends Escape, and requires exit status zero. It requires `xvfb-run`, `xauth`, `xdotool`, ImageMagick `import`, a usable WGPU driver, and a working ALSA `default` playback device. An explicitly configured ALSA null device is sufficient for window-only checks, but does not verify playback timing or underruns. Inspect both printed-directory PNGs with `view_media` and inspect the log. CLI render commands do not prove rendered pixels. Window-manager close controls and focus/repeat behavior need their own live graphical actions when affected; the helper does not claim to test them.
 
 ## Cleanup
 
@@ -76,4 +76,5 @@ Keep entries current as game behavior grows. Add a concrete input sequence and o
 - [Feature-map index](feature-map/README.md)
 - [Initialization, frame output, and rendering](feature-map/launch-and-render.md)
 - [Controller input and timesteps](feature-map/controller-input.md)
+- [Audio generation and playback](feature-map/audio.md)
 - [Exit and failure behavior](feature-map/exit.md)
