@@ -26,7 +26,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
-| `scripts/check.sh` | fmt; Clippy for every deployment target; tests on the host, including `platform` only when the host is a deployment target; Miri tests for the unsafe crates on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
+| `scripts/check.sh` | fmt; Clippy for every deployment target; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
 | this file | working rules and design rules, including configuration correctness, comments, and local lint suppressions not caught by static checks |
 
@@ -44,7 +44,7 @@ Review must reject local lint suppressions not caught by compiler or Clippy poli
 - After the same correction class occurs twice, use `/correct` to turn it into prevention: prefer architecture, then types, then a standard lint with a useful error, then a focused regression test, and prose or review guidance last.
 - Get the user's approval before creating a crate, changing a crate's public interface, adding a dependency between workspace crates, or adding an external crate dependency.
 - Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints; check this when reviewing manifest changes.
-- Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in an unsafe crate exercise every unsafe block.
+- Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in `game-memory` exercise every unsafe block.
 - Upgrade the toolchain deliberately: change the exact pin (or `miri_toolchain`), run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
@@ -65,6 +65,11 @@ Review must reject local lint suppressions not caught by compiler or Clippy poli
 
 ### Documentation
 - Code is the source of truth. Do not document demo games or restate what is evident in code; keep documentation to non-obvious rationale, setup, policy, and legal requirements.
+
+### Testing
+- Code unit tests are allowed only for small, reusable utilities in `game-core` and `game-memory`. They must assert stable utility behavior through the public utility interface; do not add change-detector tests that merely mirror an implementation, private state, or incidental call sequence.
+- Do not add code unit tests to `game`, `platform-api`, a platform, a renderer, or any other crate.
+- Verify game behavior by driving the production CLI with controlled input and observing its complete outputs. Verify platform behavior by running the affected platform. Use the repository's `verify-game` skill for the required commands and evidence.
 
 ### Invariants
 - Make invalid states unrepresentable: newtypes for confusable values such as IDs, indices, units, and coordinate spaces; enums instead of related booleans or `Option` combinations; private fields and constructors that reject invalid states.

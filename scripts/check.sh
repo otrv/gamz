@@ -21,14 +21,8 @@ for target in $targets; do
     cargo clippy -p platform --no-default-features --features cli --all-targets --locked --target "$target"
 done
 
-host="$(rustc -vV | sed -n 's/^host: //p')"
-if printf '%s\n' $targets | grep -qx "$host"; then
-    step "cargo test"
-    cargo test --workspace --all-features --locked --target "$host"
-else
-    step "cargo test (host $host has no platform layer; skipping platform)"
-    cargo test --workspace --exclude platform --all-features --locked --target "$host"
-fi
+step "cargo test (game-core and game-memory utilities)"
+cargo test -p game-core -p game-memory --locked
 
 rustup toolchain install "$miri_toolchain" --profile minimal --component miri,rust-src --no-self-update
 for crate in $unsafe_crates; do

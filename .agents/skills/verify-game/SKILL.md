@@ -47,7 +47,7 @@ Both `dt` and `controller` are required. Omitted buttons mean released with zero
 
 The first output line contains complete texture uploads; each subsequent line is the returned visual frame or audio samples. Texture IDs are supplied by the game, not acknowledged by the caller. Commands contain all fields, including text glyph geometry. Observe these outputs and any relevant file effects; never inspect opaque game memory. See `crates/platform/src/cli/input.rs` and `output.rs` for the wire representation. For manual audio requests and playback verification, follow [Audio](feature-map/audio.md); the baseline `drive` covers visual frames only.
 
-The current game ignores inputs and returns an empty black frame. The baseline therefore proves the transport, not gameplay responses or cross-machine determinism. When gameplay is added, update the feature map and baseline assertions with concrete sequences and independently expected results. Unit tests complement this live path; they do not replace it.
+The current game ignores inputs and returns an empty black frame. The baseline therefore proves the transport, not gameplay responses or cross-machine determinism. When gameplay is added, update the feature map and baseline assertions with concrete sequences and independently expected results.
 
 ## Rendering and platform behavior
 
