@@ -7,9 +7,21 @@ description: "Reviews gamz changes against the priorities, enforcement policy, a
 
 Judgment review of a change against [AGENTS.md](../../../AGENTS.md). Static checks own every rule they can express. This review owns the rest and does not duplicate them.
 
+## Pre-change subtraction check
+
+Before implementing additions involving crates or dependencies, public APIs, scripts or custom checks, abstractions or protocols, tests, or documentation, establish:
+
+- The concrete defect or requirement.
+- Why existing code, tooling, or review cannot own it without the addition.
+- The smallest alternative considered, including removal or reuse.
+- The maintenance surface added.
+- Whether user approval is required under **Working rules**, and whether it was obtained.
+
+For an existing diff, assess these against the pre-change state. Reject unjustified additions. Keep this judgment in review, not a custom script.
+
 ## Workflow
 
-1. Determine the scope: the paths, commits, or PR the user named. Otherwise use the diff against the merge base with `origin/main` (fall back to `main`), including uncommitted and untracked files. Read whole touched functions, types, and modules when a rule needs context, such as bounds or ownership.
+1. Determine the scope: the paths, commits, or PR the user named. Otherwise use the diff against the merge base with `origin/main` (fall back to `main`), including uncommitted and untracked files. Apply the **Pre-change subtraction check**. Read whole touched functions, types, and modules when a rule needs context, such as bounds or ownership.
 2. Run `scripts/check.sh`. If it fails, report that as the first finding and keep reviewing. Do not re-report anything the compiler, Clippy, rustfmt, or the script detects.
 3. Check every change against **Priorities**, **Enforcement**, **Working rules**, and every **Design rules** subsection of `AGENTS.md`. Check required approvals against the available conversation; report missing evidence rather than assume approval. For **Layers**, inspect direct dependencies and complete boundary signatures, including nested types and errors, and verify ownership against that section.
 4. Review documentation changes separately against **Documentation**.
