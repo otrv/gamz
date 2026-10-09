@@ -1,3 +1,4 @@
+mod audio;
 mod services;
 
 use std::collections::TryReserveError;
@@ -21,6 +22,7 @@ use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::window::{Window, WindowId};
 
 use crate::memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
+use audio::Audio;
 use services::load_entire_file;
 
 const WINDOW_TITLE: &str = "gamz";
@@ -34,6 +36,7 @@ pub(crate) enum PlatformError {
     Window(OsError),
     Renderer(RendererError),
     Startup(StartupError),
+    Audio(Box<dyn std::error::Error>),
 }
 
 impl fmt::Display for PlatformError {
@@ -44,6 +47,7 @@ impl fmt::Display for PlatformError {
             Self::Window(error) => write!(f, "cannot open the window: {error}"),
             Self::Renderer(error) => write!(f, "renderer: {error}"),
             Self::Startup(error) => write!(f, "game initialization: {error}"),
+            Self::Audio(error) => write!(f, "audio: {error}"),
         }
     }
 }
@@ -152,6 +156,7 @@ pub(crate) fn run() -> Result<(), PlatformError> {
         }
         state
     };
+    let mut audio = Audio::start(state).map_err(PlatformError::Audio)?;
     let frame_interval =
         Duration::from_nanos(1_000_000_000_u64.div_ceil(u64::from(MAX_FRAMES_PER_SECOND.get())));
     let mut previous_frame = Instant::now();
@@ -189,6 +194,9 @@ pub(crate) fn run() -> Result<(), PlatformError> {
             },
             &input,
         );
+        audio
+            .update(state)
+            .map_err(|error| PlatformError::Audio(error.into()))?;
         window.pre_present_notify();
         if let Some(stats) = renderer.draw(&frame).map_err(PlatformError::Renderer)?
             && now >= next_stats

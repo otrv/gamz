@@ -7,7 +7,7 @@ autobins = false
 
 [features]
 cli = ["dep:rustix", "dep:serde", "dep:serde_json"]
-linux = ["dep:renderer-wgpu", "dep:pollster", "dep:rustix", "dep:winit"]
+linux = ["dep:alsa", "dep:renderer-wgpu", "dep:pollster", "dep:rustix", "dep:winit"]
 
 [[bin]]
 name = "linux"
@@ -26,6 +26,7 @@ serde = { version = "1.0", default-features = false, features = ["derive", "std"
 serde_json = { version = "1.0", default-features = false, features = ["std"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+alsa = { version = "0.12.1", default-features = false, features = ["std"], optional = true }
 renderer-wgpu = { path = "../renderer-wgpu", optional = true }
 pollster = { version = "0.4.0", default-features = false, optional = true }
 rustix = { version = "1.1.5", default-features = false, features = ["std", "fs"], optional = true }

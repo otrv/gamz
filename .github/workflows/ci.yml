@@ -13,5 +13,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - run: rustup toolchain install
       - run: scripts/check.sh
