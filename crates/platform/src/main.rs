@@ -5,6 +5,9 @@ compile_error!("the platform layer is implemented only for Linux");
 mod linux;
 
 #[cfg(target_os = "linux")]
+mod memory;
+
+#[cfg(target_os = "linux")]
 fn main() -> std::process::ExitCode {
     match linux::run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
