@@ -17,6 +17,8 @@ targets="$(awk -F'"' '/^targets[[:space:]]*=/ { for (i = 2; i < NF; i += 2) prin
 for target in $targets; do
     step "cargo clippy --target $target"
     cargo clippy --workspace --all-targets --all-features --locked --target "$target"
+    step "cargo clippy (CLI only) --target $target"
+    cargo clippy -p platform --no-default-features --features cli --all-targets --locked --target "$target"
 done
 
 host="$(rustc -vV | sed -n 's/^host: //p')"

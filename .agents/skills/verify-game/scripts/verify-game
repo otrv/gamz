@@ -18,7 +18,7 @@ launch() {
     fi
     rm -rf "$run_dir"
     mkdir -p "$run_dir" "$artifacts"
-    cargo build -p platform
+    cargo build -p platform --features linux --bin linux --locked
     tmux new-session -d -s "$session" bash -lc '
         set -euo pipefail
         export DISPLAY="$1"
@@ -26,7 +26,7 @@ launch() {
         xvfb=$!
         trap "kill $xvfb 2>/dev/null || true" EXIT
         cd "$3"
-        cargo run -q -p platform >"$2/game.log" 2>&1
+        cargo run -q -p platform --features linux --bin linux --locked >"$2/game.log" 2>&1
     ' bash "$display" "$run_dir" "$root"
     for _ in $(seq 1 200); do
         if window_id >/dev/null; then

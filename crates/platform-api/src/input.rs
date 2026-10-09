@@ -82,6 +82,14 @@ pub struct ButtonState {
 
 impl ButtonState {
     #[must_use]
+    pub fn new(ended: ButtonPosition, half_transitions: u32) -> Self {
+        Self {
+            ended,
+            half_transitions,
+        }
+    }
+
+    #[must_use]
     pub fn ended(self) -> ButtonPosition {
         self.ended
     }

@@ -3,16 +3,33 @@ name = "platform"
 version = "0.1.0"
 edition.workspace = true
 publish.workspace = true
+autobins = false
+
+[features]
+cli = ["dep:rustix", "dep:serde", "dep:serde_json"]
+linux = ["dep:renderer-wgpu", "dep:pollster", "dep:rustix", "dep:winit"]
+
+[[bin]]
+name = "linux"
+path = "src/main.rs"
+required-features = ["linux"]
+
+[[bin]]
+name = "cli"
+path = "src/cli/main.rs"
+required-features = ["cli"]
 
 [dependencies]
 game = { path = "../game" }
 platform-api = { path = "../platform-api" }
+serde = { version = "1.0", default-features = false, features = ["derive", "std"], optional = true }
+serde_json = { version = "1.0", default-features = false, features = ["std"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-renderer-wgpu = { path = "../renderer-wgpu" }
-pollster = { version = "0.4.0", default-features = false }
-rustix = { version = "1.1.5", default-features = false, features = ["std", "fs"] }
-winit = { version = "0.30.13", default-features = false, features = ["x11", "rwh_06"] }
+renderer-wgpu = { path = "../renderer-wgpu", optional = true }
+pollster = { version = "0.4.0", default-features = false, optional = true }
+rustix = { version = "1.1.5", default-features = false, features = ["std", "fs"], optional = true }
+winit = { version = "0.30.13", default-features = false, features = ["x11", "rwh_06"], optional = true }
 
 [lints]
 workspace = true

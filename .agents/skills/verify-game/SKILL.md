@@ -5,7 +5,7 @@ description: Run the current gamz game through the Linux platform, exercise its 
 
 # Verify a gamz game
 
-Use this skill after changing user-visible game behavior in `crates/game`. It drives the production `platform` binary rather than calling game functions directly. Unit tests remain appropriate for pure game rules, but they do not replace this run.
+Use this skill after changing user-visible game behavior in `crates/game`. It drives the production `linux` binary rather than calling game functions directly. Unit tests remain appropriate for pure game rules, but they do not replace this run.
 
 ## Launch
 
@@ -15,7 +15,7 @@ The game is a Linux/X11 application. The checked-in helper builds the platform, 
 .agents/skills/verify-game/scripts/verify-game launch
 ```
 
-It uses `cargo run -p platform`, so the pinned Rust toolchain and the project's locked dependencies are required. The game is ready only when the command prints a `ready:` line with a window ID. Do not use an existing desktop window or start a second verifier at the same time: the default run owns X display `:99` and tmux session `gamz-verify-$UID`.
+It uses `cargo run -p platform --features linux --bin linux --locked`, so the pinned Rust toolchain and the project's locked dependencies are required. The game is ready only when the command prints a `ready:` line with a window ID. Do not use an existing desktop window or start a second verifier at the same time: the default run owns X display `:99` and tmux session `gamz-verify-$UID`.
 
 ## Doctor
 

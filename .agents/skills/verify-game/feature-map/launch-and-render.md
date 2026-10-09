@@ -8,7 +8,7 @@
 
 ## How to get to it (user POV)
 
-From the repository root, run `cargo run -p platform`. A user sees a window titled `gamz`.
+From the repository root, run `cargo run -p platform --features linux --bin linux --locked`. A user sees a window titled `gamz`.
 
 ## Driving it with verify-game
 
