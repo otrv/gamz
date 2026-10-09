@@ -1,8 +1,38 @@
+use platform_api::audio::{SampleRate, StereoFrame};
 use platform_api::render::{
     Color, Frame, GlyphQuad, MAX_COMMANDS, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURES, PixelRect,
     Rect, RectStyle, RenderCommand, Sampling, TextureUpload, Transform,
 };
 use serde::{Serialize, Serializer};
+
+pub(super) struct AudioOutput<'a> {
+    pub(super) sample_rate: SampleRate,
+    pub(super) frames: &'a [StereoFrame],
+}
+
+impl Serialize for AudioOutput<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Fields<'a> {
+            sample_rate: u32,
+            frames: Samples<'a>,
+        }
+
+        Fields {
+            sample_rate: self.sample_rate.hz(),
+            frames: Samples(self.frames),
+        }
+        .serialize(serializer)
+    }
+}
+
+struct Samples<'a>(&'a [StereoFrame]);
+
+impl Serialize for Samples<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|frame| [frame.left, frame.right]))
+    }
+}
 
 #[derive(Serialize)]
 pub(super) struct Startup<'a> {

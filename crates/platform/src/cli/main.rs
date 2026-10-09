@@ -11,13 +11,14 @@ mod services;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::process::ExitCode;
 
+use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::services::PlatformApi;
 use serde::Serialize;
 
 use input::Input;
 use memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
-use output::{FrameOutput, Startup, Uploads};
+use output::{AudioOutput, FrameOutput, Startup, Uploads};
 use services::load_entire_file;
 
 const MAX_INPUT_BYTES: usize = 16 * 1024;
@@ -57,6 +58,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     persistent.try_reserve_exact(persistent_bytes)?;
     let mut transient = Vec::<u8>::new();
     transient.try_reserve_exact(transient_bytes)?;
+    let mut audio = Vec::new();
+    audio.try_reserve_exact(MAX_AUDIO_FRAMES)?;
+    audio.resize(MAX_AUDIO_FRAMES, StereoFrame::default());
     let mut output = BufWriter::new(io::stdout().lock());
     let (state, uploads) = game::initialize(
         PersistentMemory {
@@ -89,15 +93,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if count > MAX_INPUT_BYTES {
             return Err("input line exceeds 16384 bytes".into());
         }
-        let Input(input) = serde_json::from_slice(&line)?;
-        let frame = game::update(
-            state,
-            TransientMemory {
-                bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
-            },
-            &input,
-        );
-        write_line(&mut output, &FrameOutput(&frame))?;
+        match serde_json::from_slice(&line)? {
+            Input::Frame(input) => {
+                let frame = game::update(
+                    state,
+                    TransientMemory {
+                        bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
+                    },
+                    &input,
+                );
+                write_line(&mut output, &FrameOutput(&frame))?;
+            }
+            Input::Audio {
+                sample_rate,
+                frames,
+            } => {
+                let frames = &mut audio[..frames];
+                game::update_audio(state, AudioBuffer::new(sample_rate, frames));
+                write_line(
+                    &mut output,
+                    &AudioOutput {
+                        sample_rate,
+                        frames,
+                    },
+                )?;
+            }
+        }
     }
 }
 
