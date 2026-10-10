@@ -83,7 +83,6 @@ struct State {
     camera: Camera,
     viewport: Viewport,
     clip: [u32; 4],
-    boundary: bool,
 }
 
 pub(super) struct Geometry {
@@ -115,23 +114,19 @@ impl Geometry {
             camera: Camera::default(),
             viewport,
             clip: viewport.clip(None),
-            boundary: true,
         };
         self.solid(
             &mut state,
             [0.0, 0.0, frame.canvas.width(), frame.canvas.height()],
             frame.clear,
         );
-        state.boundary = true;
         for command in frame.commands {
             match *command {
                 RenderCommand::SetCamera(camera) => {
                     state.camera = camera;
-                    state.boundary = true;
                 }
                 RenderCommand::SetClip(rect) => {
                     state.clip = viewport.clip(rect);
-                    state.boundary = true;
                 }
                 RenderCommand::DrawSprite(sprite) => self.sprite(&mut state, sprite, textures),
                 RenderCommand::DrawRect { rect, style } => {
@@ -281,10 +276,9 @@ impl Geometry {
         let index = self.bytes.len() / (VERTEX_BYTES * 4);
         assert!(index < GPU_QUADS, "quad budget exhausted");
         let index = u32::try_from(index).unwrap();
-        let compatible = !state.boundary
-            && self.batches.last().is_some_and(|batch| {
-                batch.texture == texture && batch.sampling == sampling && batch.clip == state.clip
-            });
+        let compatible = self.batches.last().is_some_and(|batch| {
+            batch.texture == texture && batch.sampling == sampling && batch.clip == state.clip
+        });
         if compatible {
             self.batches.last_mut().unwrap().end = index + 1;
         } else {
@@ -297,7 +291,6 @@ impl Geometry {
                 end: index + 1,
             });
         }
-        state.boundary = false;
         let colors = [
             linear(color.0),
             linear(color.1),
