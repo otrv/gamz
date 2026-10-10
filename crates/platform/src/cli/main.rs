@@ -70,8 +70,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
         },
         &PlatformApi { load_entire_file },
-    )
-    .map_err(|error| io::Error::other(error.to_string()))?;
+    )?;
     write_line(
         &mut output,
         &Startup {

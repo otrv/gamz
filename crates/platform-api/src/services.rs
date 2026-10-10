@@ -46,3 +46,5 @@ impl fmt::Display for StartupError {
         }
     }
 }
+
+impl core::error::Error for StartupError {}
