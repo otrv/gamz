@@ -6,7 +6,7 @@ Rust game engine. Cargo workspace; every crate lives in `crates/<name>`.
 
 Correctness, then predictability, then performance, then simplicity. Never trade a higher priority for a lower one.
 
-Choose the simplest design that preserves the known invariants. Do not add machinery for hypothetical problems, and do not postpone a known correctness or design violation in the name of simplicity. The goal is ordinary, idiomatic Rust with unusually strong guardrails, not custom machinery.
+Choose the simplest design that preserves the known invariants. Keep zero known technical debt: call out concrete correctness and design problems even when previously accepted, and resolve them rather than knowingly commit them. Use `/grill-me` to settle unresolved design decisions before fixing them. Optional optimizations and hypothetical future requirements are not debt; do not commit speculative mechanisms or extension hooks merely to leave room for future improvements. The goal is ordinary, idiomatic Rust with unusually strong guardrails, not custom machinery.
 
 ## Enforcement
 
@@ -28,7 +28,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
 | `scripts/check.sh` | fmt; Clippy for every deployment target; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
-| this file | working rules and design rules, including configuration correctness, comments, and local lint suppressions not caught by static checks |
+| this file | working rules and design rules, including debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
 
 Configured checks are fatal and have no local escape hatches. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
 
@@ -56,7 +56,7 @@ Review must reject local lint suppressions not caught by compiler or Clippy poli
 - Only `game` directly depends on `game-core`. Platform and renderer crates use `platform-api`, never `game-core` or `game-memory`.
 - Platform and third-party library types never appear in game-side interfaces; the game expresses intent, not backend mechanism. Target-specific code and platform libraries stay inside the platform module for their target.
 - Platform supplies bounded persistent and transient byte regions; game-side code constructs arenas over them. Long-lived state stays inside the persistent root; frame scratch resets together. Game-side crates (`platform-api`, `game-core`, `game-memory`, `game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and depend only on crates that use neither.
-- `game-core` holds only mechanisms whose semantics are independent of this game and already justified by use in `game`.
+- New mechanisms in `game-core` must have game-independent semantics and be justified by concrete use in a game before extraction, not hypothetical future use. The main branch is reusable boilerplate: retain mechanisms extracted from games even after those games are removed. Absence of callers in the current `game` crate alone is not grounds for removal.
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
