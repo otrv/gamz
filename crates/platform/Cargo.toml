@@ -11,7 +11,7 @@ linux = ["dep:alsa", "dep:renderer-wgpu", "dep:pollster", "dep:rustix", "dep:win
 
 [[bin]]
 name = "linux"
-path = "src/main.rs"
+path = "src/linux/main.rs"
 required-features = ["linux"]
 
 [[bin]]

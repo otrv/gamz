@@ -1,4 +1,9 @@
+#[cfg(not(target_os = "linux"))]
+compile_error!("the platform layer is implemented only for Linux");
+
 mod audio;
+#[path = "../memory.rs"]
+mod memory;
 mod services;
 
 use std::collections::TryReserveError;
@@ -30,7 +35,7 @@ const WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(1280.0, 720.0);
 const MAX_FRAMES_PER_SECOND: NonZeroU32 = NonZeroU32::new(60).unwrap();
 
 #[derive(Debug)]
-pub(crate) enum PlatformError {
+enum PlatformError {
     Memory(TryReserveError),
     EventLoop(EventLoopError),
     Window(OsError),
@@ -109,7 +114,17 @@ impl ApplicationHandler for Platform {
     }
 }
 
-pub(crate) fn run() -> Result<(), PlatformError> {
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("gamz: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<(), PlatformError> {
     let mut persistent = Vec::<u8>::new();
     persistent
         .try_reserve_exact(PERSISTENT_MEMORY_BYTES)
