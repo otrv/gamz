@@ -1,4 +1,4 @@
-use crate::font::{Font, MAX_TEXT_BYTES};
+use crate::font::Font;
 use platform_api::render::{
     Color, GlyphQuad, MAX_COMMANDS, MAX_QUADS, Point, RenderCommand, Sampling, Scale, Text,
 };
@@ -38,11 +38,10 @@ impl<'a> RenderCommands<'a> {
         color: Color,
         sampling: Sampling,
     ) {
-        assert!(content.len() <= MAX_TEXT_BYTES);
-        assert!(content.len() <= self.glyphs.len(), "glyph budget exhausted");
-        let (output, remaining) = core::mem::take(&mut self.glyphs).split_at_mut(content.len());
+        let output = core::mem::take(&mut self.glyphs);
+        let len = font.prepare(content, position, scale, output).len();
+        let (glyphs, remaining) = output.split_at_mut(len);
         self.glyphs = remaining;
-        let glyphs = font.prepare(content, position, scale, output);
         self.push(RenderCommand::DrawText(Text::new(
             glyphs,
             font.texture(),
