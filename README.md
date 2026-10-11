@@ -31,6 +31,16 @@ Audio requests may be interleaved with visual-frame requests in the same process
 
 For controlled runs and retained evidence, use the [verification skill](.agents/skills/verify-game/SKILL.md). Serialization stays in the CLI so the game-side dependency graph remains free of `std` and `alloc`, even when Cargo unifies features in a full workspace build.
 
+## Performance measurements
+
+Run the opt-in benchmark game through the normal Linux platform:
+
+```sh
+cargo run --release --locked -p benchmark-platform --features linux --bin benchmark-linux
+```
+
+Normal builds still select `game`. For CPU/memory measurements and profiling with standard Linux tools, see [Benchmarking and profiling](.agents/skills/verify-game/feature-map/performance.md).
+
 ## Contributing
 
 [AGENTS.md](AGENTS.md) defines the project's design and enforcement policies.

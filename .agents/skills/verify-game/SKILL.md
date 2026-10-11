@@ -1,6 +1,6 @@
 ---
 name: verify-game
-description: "Verifies gamz game behavior through controlled CLI inputs and complete initialization/frame outputs. Uses the graphical Linux platform only for rendering, keyboard/window integration, or other behavior outside the game."
+description: "Verifies gamz through controlled CLI outputs and graphical platform checks. Use for game changes and to measure CPU/memory performance before and after runtime, renderer, dependency, or toolchain changes."
 ---
 
 # Verify a gamz game
@@ -59,6 +59,12 @@ Only when the affected feature needs it, run:
 
 This builds the `linux` binary, owns a private Xvfb display for one bounded drive, checks the window/adapter/frame log, exercises mapped keyboard input, captures before/after images, sends Escape, and requires exit status zero. It requires `xvfb-run`, `xauth`, `xdotool`, ImageMagick `import`, a usable WGPU driver, and a working ALSA `default` playback device. An explicitly configured ALSA null device is sufficient for window-only checks, but does not verify playback timing or underruns. Inspect both printed-directory PNGs with `view_media` and inspect the log. CLI render commands do not prove rendered pixels. Window-manager close controls and focus/repeat behavior need their own live graphical actions when affected; the helper does not claim to test them.
 
+## Performance
+
+For changes that can affect execution cost (game-side utilities, platform, renderer, dependencies, toolchain, or build settings), measure the release benchmark executable with standard tools before editing and again after correctness checks, on the same machine with the same display, audio, driver, and duration. Build outside the measurement and choose a finite duration and repetition count appropriate to the change. Do not run builds, captures, or other tests concurrently with measurements. Documentation-only changes do not need a benchmark. Follow [Benchmarking and profiling](feature-map/performance.md) for commands, validation, evidence, and limitations.
+
+Validate each run and inspect CPU/resource measurements, not just tool output. Repeat enough to assess variability before claiming a performance difference; one run is only a spot measurement. Investigate a material slowdown or memory increase; use a separate `perf record` run to locate CPU cost when useful. Report before/after values, environment, and your assessment. No automatic threshold certifies performance: noisy, incompatible, unavailable, or missing baseline measurements must be reported as limitations, never as proof of no regression. If a change is already in progress, do not revert others' work to manufacture a baseline. The example cannot measure code it does not execute; say when additional workload-specific measurements are needed.
+
 ## Cleanup
 
 Every drive closes or kills its owned process on completion or failure; the Linux wrapper also tears down Xvfb. No shared desktop or persistent service is used. Evidence survives cleanup:
@@ -78,3 +84,4 @@ Keep entries current as game behavior grows. Add a concrete input sequence and o
 - [Controller input and timesteps](feature-map/controller-input.md)
 - [Audio generation and playback](feature-map/audio.md)
 - [Exit and failure behavior](feature-map/exit.md)
+- [Benchmarking and profiling](feature-map/performance.md)
