@@ -10,9 +10,14 @@ step() {
 targets=(x86_64-unknown-linux-gnu)
 unsafe_crates="game-memory"
 miri_toolchain="nightly-2026-10-01"
+deny_version="0.20.2"
 
 step "cargo fmt"
 cargo fmt --all -- --check
+
+step "cargo deny ($deny_version)"
+cargo install cargo-deny --version "=$deny_version" --locked
+cargo deny --workspace --locked check --deny warnings bans
 
 rustup target add "${targets[@]}"
 for target in "${targets[@]}"; do

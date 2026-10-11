@@ -5,7 +5,7 @@ A Rust game engine.
 ## Getting started
 
 Requires [rustup](https://rustup.rs); the exact toolchain is pinned in `rust-toolchain.toml`.
-The check runner installs its deployment targets and pinned Miri toolchain on demand.
+The check runner installs its deployment targets and pinned versions of `cargo-deny` and Miri on demand.
 Building the Linux graphical platform also requires ALSA development files and `pkg-config` (`sudo apt-get install libasound2-dev pkg-config` on Debian/Ubuntu). These are also needed for the Linux all-features checks, but not for CLI-only builds.
 
 ```sh
