@@ -7,18 +7,23 @@ step() {
     printf '==> %s\n' "$1"
 }
 
+targets=(x86_64-unknown-linux-gnu)
 unsafe_crates="game-memory"
 miri_toolchain="nightly-2026-10-01"
 
 step "cargo fmt"
 cargo fmt --all -- --check
 
-targets="$(awk -F'"' '/^targets[[:space:]]*=/ { for (i = 2; i < NF; i += 2) print $i }' rust-toolchain.toml)"
-for target in $targets; do
+rustup target add "${targets[@]}"
+for target in "${targets[@]}"; do
     step "cargo clippy --target $target"
     cargo clippy --workspace --all-targets --all-features --locked --target "$target"
-    step "cargo clippy (CLI only) --target $target"
-    cargo clippy -p platform --no-default-features --features cli --all-targets --locked --target "$target"
+    for package in platform benchmark-platform; do
+        for feature in cli linux; do
+            step "cargo clippy ($package, $feature only) --target $target"
+            cargo clippy -p "$package" --no-default-features --features "$feature" --all-targets --locked --target "$target"
+        done
+    done
 done
 
 step "cargo test (game-core and game-memory utilities)"

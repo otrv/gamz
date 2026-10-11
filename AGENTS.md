@@ -21,12 +21,12 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 
 | Layer | Owns |
 |---|---|
-| `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions; the deployment targets |
+| `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions |
 | crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) or `platform` (binary) |
 | `Cargo.toml` `[workspace.lints]` | fatal warnings and rejection of local weakening except for the macro-compatible `deny` lints below, in checked configurations; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
-| `scripts/check.sh` | fmt; Clippy for every deployment target; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
+| `scripts/check.sh` | deployment targets and their installation; fmt; Clippy for every deployment target with workspace all-features and each host's isolated `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); Cargo dependency resolution uses `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
 | this file, checked by `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
 
