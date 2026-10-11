@@ -16,11 +16,15 @@ step "cargo fmt"
 cargo fmt --all -- --check
 
 step "cargo deny ($deny_version)"
-cargo install cargo-deny --version "=$deny_version" --locked
+if [[ "$(cargo deny --version 2>/dev/null || true)" != "cargo-deny $deny_version" ]]; then
+    cargo install cargo-deny --version "=$deny_version" --locked
+fi
 cargo deny --workspace --locked check --deny warnings bans
 
-rustup target add "${targets[@]}"
 for target in "${targets[@]}"; do
+    if ! rustup target list --installed | grep -Fx "$target" >/dev/null; then
+        rustup target add "$target"
+    fi
     step "cargo clippy --target $target"
     cargo clippy --workspace --all-targets --all-features --locked --target "$target"
     for package in platform benchmark-platform; do
@@ -34,7 +38,10 @@ done
 step "cargo test (game-core and game-memory utilities)"
 cargo test -p game-core -p game-memory --locked
 
-rustup toolchain install "$miri_toolchain" --profile minimal --component miri,rust-src --no-self-update
+if ! rustup run "$miri_toolchain" cargo miri --version >/dev/null 2>&1 \
+    || ! rustup component list --toolchain "$miri_toolchain" --installed | grep -Fx rust-src >/dev/null; then
+    rustup toolchain install "$miri_toolchain" --profile minimal --component miri,rust-src --no-self-update
+fi
 for crate in $unsafe_crates; do
     step "miri ($miri_toolchain): $crate"
     cargo "+$miri_toolchain" miri test -p "$crate" --all-features --locked

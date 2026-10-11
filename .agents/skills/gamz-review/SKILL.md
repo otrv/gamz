@@ -24,11 +24,13 @@ For an existing diff, assess these against the pre-change state. Reject unjustif
 1. Determine the scope: the paths, commits, or PR the user named. Otherwise use the diff against the merge base with `origin/main` (fall back to `main`), including uncommitted and untracked files. Apply the **Pre-change subtraction check**. Read whole touched functions, types, and modules when a rule needs context, such as bounds or ownership.
 2. Run `scripts/check.sh`. If it fails, report that as the first finding and keep reviewing. Do not re-report anything the compiler, Clippy, rustfmt, or the script detects.
 3. Check every change against **Priorities**, **Enforcement**, **Working rules**, and every **Design rules** subsection of `AGENTS.md`. Check required approvals against the available conversation; report missing evidence rather than assume approval. For **Layers**, inspect direct dependencies and complete boundary signatures, including nested types and errors, and verify ownership against that section.
+   Reject handwritten local lint suppressions not caught by compiler or Clippy policy, including suppression of the four macro-compatible `deny` lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten local suppressions.
 4. Review documentation changes separately against **Documentation**.
 5. If the change affects game-side code or its dependency graph, verify the **Layers** restrictions on `no_std`, `alloc`, and `std`, including affected transitive dependencies under the enabled features. Include dependency version and feature changes, not only new crates.
    For added or expanded `game-core` functionality, trace each addition to the `benchmark-game` runtime path that illustrates it and require execution evidence through the relevant CLI or graphical platform. Reject missing or merely nominal examples under **Layers**, even when compilation and utility tests pass.
 6. Check that code unit tests exist only for lean, public-interface behavior of reusable `game-core` and `game-memory` utilities, never as implementation change detectors. For game changes, require production-CLI evidence; for platform changes, require evidence from running the affected platform. If the change touches an unsafe crate, check that every SAFETY contract proves soundness for all inputs a safe caller can supply, that the safe API cannot be misused to break it, and that its Miri tests exercise every unsafe block.
 7. For changes to manifests, lockfiles, toolchain or lint configuration, check scripts, hooks, CI, agent rules, or this skill, trace the affected enforcement path. Confirm lint inheritance, exact toolchain pins, deployment-target coverage, unsafe-crate lint parity, and local/CI check parity against **Enforcement** and **Working rules**. Ensure rules are neither weakened nor duplicated and that this skill covers the rules left to review.
+   When upgrading Rust, review the default-deny lint inventory against `rustc -W help`.
 8. Report. Do not edit code unless the user asks for fixes.
 
 Rules this review keeps catching that a higher layer could express are tooling gaps. So is anything a static layer should have caught but missed.
@@ -42,3 +44,13 @@ Group findings by kind. For each, cite `file:line`, the rule as `AGENTS.md › <
 - **Tooling gap**: something a higher enforcement layer could own.
 
 If nothing applies, say "No findings." Do not praise or restate static-check results.
+
+When performance impact is relevant, include before/after measurements and evidence in the completion report, or explicitly state what remains unmeasured. Follow `verify-game` for runtime performance.
+
+For implementation work, end the completion report with this three-line receipt (not needed for a review-only request):
+
+```text
+scripts/check.sh: <result>
+/gamz-review: <scope>; <result>
+runtime verification: <command and artifact links, or not applicable>
+```

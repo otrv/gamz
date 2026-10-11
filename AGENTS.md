@@ -16,7 +16,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 2. compiler and Clippy policy;
 3. rustfmt;
 4. `scripts/check.sh`, run by the pre-commit hook and CI;
-5. this file, checked by the `/gamz-review` skill;
+5. this file and the `/gamz-review` skill;
 6. a new tool, only when it prevents a meaningful class of defects the toolchain cannot express and clearly outweighs its maintenance cost.
 
 | Layer | Owns |
@@ -29,19 +29,17 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `deny.toml` | allowed direct consumers of `game-core`, `game-memory`, and `renderer-wgpu` in the resolved all-features workspace graph, including development and target-specific dependencies |
 | `scripts/check.sh` | deployment targets and their installation; fmt; pinned `cargo-deny` bans; Clippy for every deployment target with workspace all-features and each host's isolated `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); Cargo dependency resolution uses `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
-| this file, checked by `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
+| `AGENTS.md` and `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
 
 Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(warnings)` so central exceptions remain possible; `forbidden_lint_groups` closes the compiler's compatibility escape hatch for local overrides. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
 
-`forbid(warnings)` does not cover default-deny lints or linker warnings. Default-deny lints configurable on the pinned stable compiler are explicitly forbidden; nightly-only and compiler-internal lints are excluded. `rust_2024_compatibility` covers `dependency_on_unit_never_type_fallback` without naming a lint already removed by the Miri toolchain. `linker_messages` is forbidden separately. Review this inventory against `rustc -W help` when upgrading Rust.
+`forbid(warnings)` does not cover default-deny lints or linker warnings. Default-deny lints configurable on the pinned stable compiler are explicitly forbidden; nightly-only and compiler-internal lints are excluded. `rust_2024_compatibility` covers `dependency_on_unit_never_type_fallback` without naming a lint already removed by the Miri toolchain. `linker_messages` is forbidden separately.
 
 `non_camel_case_types`, `non_upper_case_globals`, `unused_attributes`, and `clippy::useless_attribute` remain at `deny` because Serde derives generate allowances for them. They remain fatal by default, but their local suppression cannot be forbidden without rejecting generated code. This exception applies throughout the workspace, not only inside derives.
 
 Enforcement configuration is trusted, reviewed code. These checks prevent mistakes and local diagnostic suppression, not deliberate edits to the checks themselves. Hooks can be bypassed; requiring successful CI before integration is a repository-permissions policy. Passing checks do not establish runtime behavior or satisfy the review obligations above.
 
 Keep `scripts/check.sh` a runner for standard tools, not a home for custom source checks or duplicated lint policy. Do not add automated checks that validate repository configuration itself. Configuration correctness, including lint inheritance and deployment targets, belongs in review; consuming configuration to run tools does not require a separate validation layer.
-
-Review must reject handwritten local lint suppressions not caught by compiler or Clippy policy, including suppression of the four macro-compatible `deny` lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten local suppressions.
 
 ## Working rules
 
@@ -50,7 +48,7 @@ Review must reject handwritten local lint suppressions not caught by compiler or
 - Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
 - After the same correction class occurs twice, use `/correct` to turn it into prevention: prefer architecture, then types, then a standard lint with a useful error, then a focused regression test, and prose or review guidance last.
 - Get the user's approval before creating a crate, changing a crate's public interface, adding a dependency between workspace crates, or adding an external crate dependency.
-- Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints; check this when reviewing manifest changes.
+- Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints.
 - Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in `game-memory` exercise every unsafe block.
 - Upgrade the toolchain deliberately: change the exact pin (or `miri_toolchain`), run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
@@ -67,7 +65,7 @@ Review must reject handwritten local lint suppressions not caught by compiler or
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
-- No comments, including trailing comments and `#[doc = "..."]` attributes. Intent belongs in names, types, assertions, and structure. This rule is enforced in review.
+- No comments, including trailing comments and `#[doc = "..."]` attributes. Intent belongs in names, types, assertions, and structure.
 - The only exception is a `// SAFETY:` contract, or a `# Safety` doc section on an `unsafe fn`, that states the proof obligation making the operation sound.
 
 ### Documentation
