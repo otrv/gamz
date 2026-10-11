@@ -28,7 +28,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
 | `scripts/check.sh` | fmt; Clippy for every deployment target; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
-| this file | working rules and design rules, including debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
+| this file, checked by `/gamz-review` | working rules and design rules, including meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
 
 Configured checks are fatal and have no local escape hatches. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
 
@@ -57,6 +57,7 @@ Review must reject local lint suppressions not caught by compiler or Clippy poli
 - Platform and third-party library types never appear in game-side interfaces; the game expresses intent, not backend mechanism. Target-specific code and platform libraries stay inside the platform module for their target.
 - Platform supplies bounded persistent and transient byte regions; game-side code constructs arenas over them. Long-lived state stays inside the persistent root; frame scratch resets together. Game-side crates (`platform-api`, `game-core`, `game-memory`, `game`, `benchmark-game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and depend only on crates that use neither.
 - New mechanisms in `game-core` must have game-independent semantics and be justified by concrete use in a game before extraction, not hypothetical future use. The main branch is reusable boilerplate: retain mechanisms extracted from games even after those games are removed. Absence of callers in the current `game` crate alone is not grounds for removal.
+- Any added or expanded `game-core` functionality must be used and illustrated in `benchmark-game` in the same change. The example must demonstrate its intended behavior through normal runtime execution; unused imports, no-effect calls, and test-only examples do not count.
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
