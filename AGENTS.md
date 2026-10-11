@@ -23,18 +23,24 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 |---|---|
 | `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions; the deployment targets |
 | crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) or `platform` (binary) |
-| `Cargo.toml` `[workspace.lints]` | fatal warnings; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
+| `Cargo.toml` `[workspace.lints]` | fatal warnings and rejection of local weakening except for the macro-compatible `deny` lints below, in checked configurations; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
 | `scripts/check.sh` | fmt; Clippy for every deployment target; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); all with `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
-| this file, checked by `/gamz-review` | working rules and design rules, including meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
+| this file, checked by `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
 
-Configured checks are fatal and have no local escape hatches. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
+Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(warnings)` so central exceptions remain possible; `forbidden_lint_groups` closes the compiler's compatibility escape hatch for local overrides. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
+
+`forbid(warnings)` does not cover default-deny lints or linker warnings. Default-deny lints configurable on the pinned stable compiler are explicitly forbidden; nightly-only and compiler-internal lints are excluded. `rust_2024_compatibility` covers `dependency_on_unit_never_type_fallback` without naming a lint already removed by the Miri toolchain. `linker_messages` is forbidden separately. Review this inventory against `rustc -W help` when upgrading Rust.
+
+`non_camel_case_types`, `non_upper_case_globals`, `unused_attributes`, and `clippy::useless_attribute` remain at `deny` because Serde derives generate allowances for them. They remain fatal by default, but their local suppression cannot be forbidden without rejecting generated code. This exception applies throughout the workspace, not only inside derives.
+
+Enforcement configuration is trusted, reviewed code. These checks prevent mistakes and local diagnostic suppression, not deliberate edits to the checks themselves. Hooks can be bypassed; requiring successful CI before integration is a repository-permissions policy. Passing checks do not establish runtime behavior or satisfy the review obligations above.
 
 Keep `scripts/check.sh` a runner for standard tools, not a home for custom source checks or duplicated lint policy. Do not add automated checks that validate repository configuration itself. Configuration correctness, including lint inheritance and deployment targets, belongs in review; consuming configuration to run tools does not require a separate validation layer.
 
-Review must reject local lint suppressions not caught by compiler or Clippy policy, including inner `#![allow]`, `#[expect]`, and their `cfg_attr` forms.
+Review must reject handwritten local lint suppressions not caught by compiler or Clippy policy, including suppression of the four macro-compatible `deny` lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten local suppressions.
 
 ## Working rules
 
