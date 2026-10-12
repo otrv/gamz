@@ -2,7 +2,7 @@
 
 mod assets;
 
-use game_core::asset::read_rgba;
+use game_core::asset::{read_font, read_rgba};
 use game_core::entity::{EntityId, EntityStorage};
 use game_core::font::Font;
 use game_core::render::RenderCommands;
@@ -54,8 +54,8 @@ pub fn initialize<'p, 't>(
     }
     let atlas = read_rgba(&assets::FONT_ATLAS).expect("embedded font atlas is valid");
     let image = read_rgba(&assets::SPRITE).expect("embedded sprite is valid");
-    let font = Font::from_file(&assets::FONT_FILE, TextureId::new(1), atlas)
-        .expect("embedded font is valid");
+    let font =
+        read_font(&assets::FONT_FILE, TextureId::new(1), atlas).expect("embedded font is valid");
     let mut entities = EntityStorage::new();
     let handles = core::array::from_fn(|index| {
         let column = u16::try_from(index % 32).unwrap();
