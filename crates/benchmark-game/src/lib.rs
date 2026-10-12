@@ -2,9 +2,8 @@
 
 mod assets;
 
-use game_core::asset::{read_font, read_rgba};
+use assets::{Assets, ids};
 use game_core::entity::{EntityId, EntityStorage};
-use game_core::font::Font;
 use game_core::render::RenderCommands;
 use game_memory::Arena;
 use platform_api::audio::{AudioBuffer, StereoFrame};
@@ -12,8 +11,7 @@ use platform_api::input::FrameInput;
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
     Camera, Canvas, CanvasRect, Color, Frame, GlyphQuad, PixelRect, Point, Radians, Rect,
-    RectStyle, RenderCommand, Sampling, Scale, Size, Sprite, StrokeWidth, TextureId, TextureUpload,
-    Transform,
+    RectStyle, RenderCommand, Sampling, Scale, Size, Sprite, StrokeWidth, TextureUpload, Transform,
 };
 use platform_api::services::{PlatformApi, StartupError};
 
@@ -33,7 +31,7 @@ struct Particle {
 pub struct GameState {
     entities: EntityStorage<Particle, ENTITY_COUNT>,
     handles: [EntityId<Particle>; ENTITY_COUNT],
-    font: Font,
+    assets: Assets,
     phase: f32,
     recycle_time: f32,
     recycle_cursor: usize,
@@ -52,10 +50,9 @@ pub fn initialize<'p, 't>(
             available: persistent.len(),
         });
     }
-    let atlas = read_rgba(&assets::FONT_ATLAS).expect("embedded font atlas is valid");
-    let image = read_rgba(&assets::SPRITE).expect("embedded sprite is valid");
-    let font =
-        read_font(&assets::FONT_FILE, TextureId::new(1), atlas).expect("embedded font is valid");
+    let (assets, uploads) = Assets::initialize().map_err(|_| StartupError::InvalidAsset {
+        path: "embedded assets.pack",
+    })?;
     let mut entities = EntityStorage::new();
     let handles = core::array::from_fn(|index| {
         let column = u16::try_from(index % 32).unwrap();
@@ -77,24 +74,12 @@ pub fn initialize<'p, 't>(
     let state = Arena::new(persistent).push(GameState {
         entities,
         handles,
-        font,
+        assets,
         phase: 0.0,
         recycle_time: 0.0,
         recycle_cursor: 0,
     });
-    Ok((
-        state,
-        [
-            TextureUpload {
-                id: TextureId::new(0),
-                image,
-            },
-            TextureUpload {
-                id: TextureId::new(1),
-                image: atlas,
-            },
-        ],
-    ))
+    Ok((state, uploads))
 }
 
 fn advance(state: &mut GameState, dt: f32) {
@@ -178,9 +163,10 @@ pub fn update<'a>(
             color: Color(78, 108, 130, 110),
         });
     }
+    let texture = state.assets.image(ids::SPRITE);
     for (_, particle) in state.entities.iter() {
         commands.push(RenderCommand::DrawSprite(Sprite {
-            texture: TextureId::new(0),
+            texture,
             source: PixelRect::new(0, 0, 16, 16),
             transform: transform(Point::new(particle.x, particle.y), 20.0, particle.rotation),
             tint: particle.tint,
@@ -194,7 +180,7 @@ pub fn update<'a>(
     commands.push(RenderCommand::SetCamera(Camera::default()));
     commands.push(RenderCommand::SetClip(None));
     commands.draw_text(
-        &state.font,
+        state.assets.font(ids::FONT),
         "GAMZ / PARTICLE GARDEN",
         Point::new(28.0, 24.0),
         Scale::new(3.0),
@@ -202,7 +188,7 @@ pub fn update<'a>(
         Sampling::Nearest,
     );
     commands.draw_text(
-        &state.font,
+        state.assets.font(ids::FONT),
         "512 SPRITES / HANDLES / CAMERA / CLIP / TEXT",
         Point::new(28.0, 690.0),
         Scale::new(1.5),

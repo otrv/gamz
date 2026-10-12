@@ -1,0 +1,123 @@
+use crate::asset::{AssetError, AssetId, Pack, read_font, read_rgba};
+use platform_api::render::{Scale, TextureId};
+
+fn fixture() -> [u8; 84] {
+    let mut bytes = [0; 84];
+    bytes[..16].copy_from_slice(b"GPAK\x02\0\0\0\x03\0\0\0\0\0\0\0");
+    bytes[16..36].copy_from_slice(&[7, 0, 0, 0, 76, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0]);
+    bytes[36..56].copy_from_slice(&[
+        232, 3, 0, 0, 79, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    bytes[56..76].copy_from_slice(&[
+        0, 40, 107, 238, 79, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    bytes[76..].copy_from_slice(b"\xff\0\x7fhello");
+    bytes
+}
+
+#[test]
+fn resolves_ids_to_opaque_bytes_including_empty_payloads() {
+    let bytes = fixture();
+    let last = {
+        let pack = Pack::<3, 84>::from_bytes(&bytes).unwrap();
+        assert_eq!(pack.bytes(AssetId::new(1000)).unwrap(), b"");
+        assert_eq!(pack.bytes(AssetId::new(7)).unwrap(), b"\xff\0\x7f");
+        pack.bytes(AssetId::new(4_000_000_000)).unwrap()
+    };
+    assert_eq!(last, b"hello");
+}
+
+#[test]
+fn reports_missing_ids() {
+    let bytes = fixture();
+    let pack = Pack::<3, 84>::from_bytes(&bytes).unwrap();
+    for id in [0, 8, 999, 1001, u32::MAX] {
+        assert_eq!(pack.bytes(AssetId::new(id)), Err(AssetError::MissingAsset));
+    }
+}
+
+#[test]
+fn enforces_game_budgets_including_exact_boundaries() {
+    let bytes = fixture();
+    assert!(Pack::<3, 84>::from_bytes(&bytes).is_ok());
+    assert_eq!(
+        Pack::<2, 84>::from_bytes(&bytes).err(),
+        Some(AssetError::BudgetExceeded)
+    );
+    assert_eq!(
+        Pack::<3, 83>::from_bytes(&bytes).err(),
+        Some(AssetError::BudgetExceeded)
+    );
+    let empty = b"GPAK\x02\0\0\0\0\0\0\0\0\0\0\0";
+    assert!(Pack::<0, 16>::from_bytes(empty).is_ok());
+}
+
+#[test]
+fn rejects_truncated_headers_catalogs_and_payloads() {
+    let bytes = fixture();
+    for length in 0..bytes.len() {
+        assert_eq!(
+            Pack::<3, 84>::from_bytes(&bytes[..length]).err(),
+            Some(AssetError::InvalidPack),
+            "truncation at {length}"
+        );
+    }
+}
+
+#[test]
+fn rejects_ambiguous_or_invalid_catalogs() {
+    for (offset, value) in [(0, 0), (4, 1), (12, 1), (36, 7), (56, 6)] {
+        let mut bytes = fixture();
+        bytes[offset..offset + 4].copy_from_slice(&u32::to_le_bytes(value));
+        assert_eq!(
+            Pack::<3, 84>::from_bytes(&bytes).err(),
+            Some(AssetError::InvalidPack)
+        );
+    }
+    for (offset, value) in [
+        (20, 75),
+        (20, 77),
+        (28, 0),
+        (28, u64::MAX),
+        (40, u64::MAX),
+        (48, 1),
+        (68, 4),
+    ] {
+        let mut bytes = fixture();
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        assert_eq!(
+            Pack::<3, 84>::from_bytes(&bytes).err(),
+            Some(AssetError::InvalidPack)
+        );
+    }
+}
+
+#[test]
+fn decoders_validate_payloads_independently_of_packs() {
+    let image_bytes = b"RGBA\x02\0\x01\0\x0b\x16\x21\x2c\x01\x02\x03\x04";
+    let image = read_rgba(image_bytes).unwrap();
+    assert_eq!((image.width(), image.height()), (2, 1));
+    assert_eq!(image.rgba(), &[11, 22, 33, 44, 1, 2, 3, 4]);
+    let mut font_bytes = [0; 1340];
+    font_bytes[..4].copy_from_slice(b"GFN1");
+    font_bytes[4] = 9;
+    font_bytes[22..24].copy_from_slice(&384_u16.to_le_bytes());
+    let font = read_font(&font_bytes, TextureId::new(3), image).unwrap();
+    let size = font.measure("  ", Scale::new(2.0));
+    assert_eq!((size.width(), size.height()), (24.0, 18.0));
+    assert_eq!(font.texture(), TextureId::new(3));
+    assert_eq!(read_rgba(&font_bytes).err(), Some(AssetError::InvalidImage));
+    assert_eq!(
+        read_font(image_bytes, TextureId::new(0), image).err(),
+        Some(AssetError::InvalidFont)
+    );
+    assert_eq!(
+        read_rgba(&image_bytes[..image_bytes.len() - 1]).err(),
+        Some(AssetError::InvalidImage)
+    );
+    font_bytes[4] = 0;
+    assert_eq!(
+        read_font(&font_bytes, TextureId::new(0), image).err(),
+        Some(AssetError::InvalidFont)
+    );
+}

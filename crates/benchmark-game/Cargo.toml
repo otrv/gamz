@@ -9,5 +9,8 @@ game-core = { path = "../game-core" }
 game-memory = { path = "../game-memory" }
 platform-api = { path = "../platform-api" }
 
+[build-dependencies]
+asset-packer = { path = "../asset-packer" }
+
 [lints]
 workspace = true
