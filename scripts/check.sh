@@ -20,6 +20,8 @@ if [[ "$(cargo deny --version 2>/dev/null || true)" != "cargo-deny $deny_version
     cargo install cargo-deny --version "=$deny_version" --locked
 fi
 cargo deny --workspace --locked check --deny warnings bans
+step "cargo deny (asset-packer: no dependencies)"
+cargo deny --manifest-path crates/asset-packer/Cargo.toml --config crates/asset-packer/deny.toml --locked check --deny warnings bans
 
 for target in "${targets[@]}"; do
     if ! rustup target list --installed | grep -Fx "$target" >/dev/null; then

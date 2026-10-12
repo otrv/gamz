@@ -1,0 +1,7 @@
+[graph]
+all-features = true
+exclude-dev = false
+
+[bans]
+allow-workspace = false
+allow = [{ crate = "asset-packer", reason = "asset-packer must remain standalone and use only the Rust standard library" }]

@@ -27,6 +27,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
 | `deny.toml` | allowed direct consumers of `game-core`, `game-memory`, and `renderer-wgpu` in the resolved all-features workspace graph, including development and target-specific dependencies |
+| `crates/asset-packer/deny.toml` | `asset-packer` stays standalone with no crate dependencies, using only the Rust standard library; checked with all features, including build, development, and target-specific dependencies |
 | `scripts/check.sh` | deployment targets and their installation; fmt; pinned `cargo-deny` bans; Clippy for every deployment target with workspace all-features and each host's isolated `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); Cargo dependency resolution uses `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
 | `AGENTS.md` and `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful `benchmark-game` use of `game-core` additions, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
@@ -59,17 +60,18 @@ Keep `scripts/check.sh` a runner for standard tools, not a home for custom sourc
 - Keep the platform a thin host adapter: it owns execution, access to the outside world, and the bytes of game memory, but never interprets those bytes or implements game-side mechanisms. The game owns their layout, initialization, and meaning, and all game rules. `game-core` owns the invariants of the reusable mechanisms it provides.
 - `platform-api` is the shared boundary: contracts and their validation only, never game mechanisms or backend implementations. Game/platform boundary signatures use its types; static game entrypoints may additionally expose an opaque game-owned state root.
 - Platform and third-party library types never appear in game-side interfaces; the game expresses intent, not backend mechanism. Target-specific code and platform libraries stay inside the platform module for their target.
-- Platform supplies bounded persistent and transient byte regions; game-side code constructs arenas over them. Long-lived state stays inside the persistent root; frame scratch resets together. Game-side crates (`platform-api`, `game-core`, `game-memory`, `game`, `benchmark-game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and depend only on crates that use neither.
+- Platform supplies bounded persistent and transient byte regions; game-side code constructs arenas over them. Long-lived state stays inside the persistent root; frame scratch resets together. Game-side crates (`platform-api`, `game-core`, `game-memory`, `game`, `benchmark-game`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and have runtime dependencies that use neither. Host-only build dependencies may use `std` and `alloc`.
 - New mechanisms in `game-core` must have game-independent semantics and be justified by concrete use in a game before extraction, not hypothetical future use. The main branch is reusable boilerplate: retain mechanisms extracted from games even after those games are removed. Absence of callers in the current `game` crate alone is not grounds for removal.
 - Any added or expanded `game-core` functionality must be used and illustrated in `benchmark-game` in the same change. The example must demonstrate its intended behavior through normal runtime execution; unused imports, no-effect calls, and test-only examples do not count.
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
 
 ### Comments
 - No comments, including trailing comments and `#[doc = "..."]` attributes. Intent belongs in names, types, assertions, and structure.
-- The only exception is a `// SAFETY:` contract, or a `# Safety` doc section on an `unsafe fn`, that states the proof obligation making the operation sound.
+- Exceptions are a `// SAFETY:` contract or a `# Safety` doc section on an `unsafe fn` stating the proof obligation making the operation sound, and a generated-file header identifying the generator and warning against manual edits.
 
 ### Documentation
 - Code is the source of truth. Do not document demo games or restate what is evident in code; keep documentation to non-obvious rationale, setup, policy, and legal requirements.
+- Tool READMEs are standalone usage guides covering invocation, inputs, outputs, and integration. Omit conversation history and unrelated engine design.
 
 ### Testing
 - Code unit tests are allowed only for small, reusable utilities in `game-core` and `game-memory`. They must assert stable utility behavior through the public utility interface; do not add change-detector tests that merely mirror an implementation, private state, or incidental call sequence.
