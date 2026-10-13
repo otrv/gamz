@@ -1,6 +1,6 @@
 ---
 name: gamz-review
-description: "Reviews gamz changes against the priorities, enforcement policy, and design rules in AGENTS.md that compiler, Clippy, and scripts/check.sh cannot enforce. Use for /gamz-review, when asked to review a gamz diff, commit, or PR, and before finishing any change in this repository."
+description: "Reviews gamz changes against the priorities, enforcement policy, and design rules in AGENTS.md that compiler, Clippy, and cargo xtask check cannot enforce. Use for /gamz-review, when asked to review a gamz diff, commit, or PR, and before finishing any change in this repository."
 ---
 
 # gamz review
@@ -22,7 +22,7 @@ For an existing diff, assess these against the pre-change state. Reject unjustif
 ## Workflow
 
 1. Determine the scope: the paths, commits, or PR the user named. Otherwise use the diff against the merge base with `origin/main` (fall back to `main`), including uncommitted and untracked files. Apply the **Pre-change subtraction check**. Read whole touched functions, types, and modules when a rule needs context, such as bounds or ownership.
-2. Run `scripts/check.sh`. If it fails, report that as the first finding and keep reviewing. Do not re-report anything the compiler, Clippy, rustfmt, or the script detects.
+2. Run `cargo xtask check`. If it fails, report that as the first finding and keep reviewing. Do not re-report anything the compiler, Clippy, rustfmt, or the runner detects.
 3. Check every change against **Priorities**, **Enforcement**, **Working rules**, and every **Design rules** subsection of `AGENTS.md`. Check required approvals against the available conversation; report missing evidence rather than assume approval. For **Layers**, inspect direct dependencies and complete boundary signatures, including nested types and errors, and verify ownership against that section.
    Reject handwritten local lint suppressions not caught by compiler or Clippy policy, including suppression of the four macro-compatible `deny` lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten local suppressions.
 4. Review documentation changes separately against **Documentation**.
@@ -51,7 +51,7 @@ When performance impact is relevant, include before/after measurements and evide
 For implementation work, end the completion report with this three-line receipt (not needed for a review-only request):
 
 ```text
-scripts/check.sh: <result>
+cargo xtask check: <result>
 /gamz-review: <scope>; <result>
 runtime verification: <command and artifact links, or not applicable>
 ```

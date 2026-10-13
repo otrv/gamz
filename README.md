@@ -5,14 +5,15 @@ A Rust game engine.
 ## Getting started
 
 Requires [rustup](https://rustup.rs); the exact toolchain is pinned in `rust-toolchain.toml`.
-The check runner requires `jq` and installs its deployment targets and pinned versions of `cargo-deny` and Miri on demand.
+Run `cargo xtask setup` to install deployment targets and pinned versions of `cargo-deny` and Miri. `cargo xtask check` requires these tools without installing them.
 Building the Linux graphical platform also requires ALSA development files and `pkg-config` (`sudo apt-get install libasound2-dev pkg-config` on Debian/Ubuntu). These are also needed for the Linux all-features checks, but not for CLI-only builds.
 
 ```sh
 rustup toolchain install
 git config core.hooksPath .githooks
 cargo run -p platform --features linux --bin linux --locked
-scripts/check.sh
+cargo xtask setup
+cargo xtask check
 ```
 
 Run the Linux graphical platform from the repository root with an X11 display, a supported GPU driver, and a working ALSA `default` playback device.
@@ -41,7 +42,7 @@ cargo run --release --locked -p platform --no-default-features \
   --features linux,game-entry/example-benchmark --bin linux
 ```
 
-Use `cli` instead of `linux` in both arguments for headless execution. Cargo features are additive, so selecting an example without disabling the default game is an error. Each build selects exactly one game. Use `scripts/check.sh` to check every selection rather than building the workspace with `--all-features`.
+Use `cli` instead of `linux` in both arguments for headless execution. Cargo features are additive, so selecting an example without disabling the default game is an error. Each build selects exactly one game. Use `cargo xtask check` to check every selection rather than building the workspace with `--all-features`.
 
 For CPU/memory measurements and profiling with standard Linux tools, see [Benchmarking and profiling](.agents/skills/verify-game/feature-map/performance.md).
 

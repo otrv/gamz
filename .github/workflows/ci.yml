@@ -13,10 +13,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config jq
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - run: rustup toolchain install
       - uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-deny
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-deny-${{ hashFiles('scripts/check.sh', 'rust-toolchain.toml') }}
-      - run: scripts/check.sh
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-deny-${{ hashFiles('crates/xtask/src/main.rs', 'rust-toolchain.toml') }}
+      - run: cargo xtask setup
+      - run: cargo xtask check

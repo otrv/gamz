@@ -15,7 +15,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 1. types, visibility, and compile-time structure;
 2. compiler and Clippy policy;
 3. rustfmt;
-4. `scripts/check.sh`, run by the pre-commit hook and CI;
+4. `cargo xtask check`, run by the pre-commit hook and CI;
 5. this file and the `/gamz-review` skill;
 6. a new tool, only when it prevents a meaningful class of defects the toolchain cannot express and clearly outweighs its maintenance cost.
 
@@ -30,8 +30,8 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |
 | `deny.toml` | allowed direct consumers of `game-core`, `game-memory`, `renderer`, `game`, `examples`, and `game-entry` in the resolved all-features workspace graph, including development and target-specific dependencies |
 | `crates/asset-packer/deny.toml` | `asset-packer` stays standalone with no crate dependencies, using only the Rust standard library; checked with all features, including build, development, and target-specific dependencies |
-| `scripts/check.sh` | deployment targets and their installation; fmt; pinned `cargo-deny` bans; Clippy with all features for compatible crates, renderer without a backend, and every game selection from Cargo metadata through isolated and combined `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on an exactly pinned nightly (`miri_toolchain`); Cargo dependency resolution uses `--locked` |
-| `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `scripts/check.sh` |
+| `crates/xtask/src/main.rs` | deployment targets, unsafe-crate list, and exact tool pins; `setup` installs prerequisites; `check` requires them and runs fmt, pinned `cargo-deny` bans, Clippy with all features for compatible crates, renderer without a backend, and every game selection from Cargo metadata through isolated and combined `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on the pinned `MIRI_TOOLCHAIN`; Cargo dependency resolution uses `--locked` |
+| `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `cargo xtask check` |
 | `AGENTS.md` and `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful example use of `game-core` additions, example isolation beyond ordinary imports, complete example registration, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
 
 Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(warnings)` so central exceptions remain possible; `forbidden_lint_groups` closes the compiler's compatibility escape hatch for local overrides. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
@@ -42,18 +42,18 @@ Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(w
 
 Enforcement configuration is trusted, reviewed code. These checks prevent mistakes and local diagnostic suppression, not deliberate edits to the checks themselves. Hooks can be bypassed; requiring successful CI before integration is a repository-permissions policy. Passing checks do not establish runtime behavior or satisfy the review obligations above.
 
-Keep `scripts/check.sh` a runner for standard tools, not a home for custom source checks or duplicated lint policy. Do not add automated checks that validate repository configuration itself. Configuration correctness, including lint inheritance and deployment targets, belongs in review; consuming configuration to run tools does not require a separate validation layer.
+Keep `xtask` a runner for standard tools, not a home for custom source checks or duplicated lint policy. Do not add automated checks that validate repository configuration itself. Configuration correctness, including lint inheritance and deployment targets, belongs in review; consuming configuration to run tools does not require a separate validation layer.
 
 ## Working rules
 
-- Run `scripts/check.sh` after changing anything. Work is not done until it passes. Never bypass the hook with `--no-verify`.
+- Run `cargo xtask check` after changing anything. Work is not done until it passes. Never bypass the hook with `--no-verify`. Install missing prerequisites with `cargo xtask setup`; checks do not install tools.
 - When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central change to the user instead of dodging it locally.
 - Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
 - After the same correction class occurs twice, use `/correct` to turn it into prevention: prefer architecture, then types, then a standard lint with a useful error, then a focused regression test, and prose or review guidance last.
 - Get the user's approval before creating a crate, changing a crate's public interface, adding a dependency between workspace crates, or adding an external crate dependency.
 - Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints.
-- Unsafe code, raw pointers, and ABI details live only in the unsafe crates listed in `scripts/check.sh` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in `game-memory` exercise every unsafe block.
-- Upgrade the toolchain deliberately: change the exact pin (or `miri_toolchain`), run `scripts/check.sh`, fix new diagnostics or reject lints centrally, and commit everything together.
+- Unsafe code, raw pointers, and ABI details live only in the `UNSAFE_CRATES` listed in `crates/xtask/src/main.rs` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in `game-memory` exercise every unsafe block.
+- Upgrade the toolchain deliberately: change the exact pin (or `MIRI_TOOLCHAIN`), run `cargo xtask setup` and `cargo xtask check`, fix new diagnostics or reject lints centrally, and commit everything together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
 ## Design rules
