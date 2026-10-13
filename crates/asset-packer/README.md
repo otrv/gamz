@@ -1,78 +1,60 @@
 # asset-packer
 
-Packs a directory of files into a binary pack and a Rust module that embeds it.
+`asset-packer` embeds a directory of files in your Rust program. It produces
+`assets.pack` and a Rust module, `assets.gen.rs`, with named IDs for the files.
+File contents are preserved without decoding or conversion.
 
 ## Install and run
 
-Install from the repository checkout:
+Install from the repository root:
 
 ```sh
 cargo install --path crates/asset-packer --locked
 ```
 
+From your crate's directory, pack your assets into a separate output directory:
+
 ```sh
 asset-packer assets/ --max-assets 16 --max-bytes 1048576 --output src/generated
 ```
 
-All three flags are required. `--max-assets` limits the file count;
-`--max-bytes` limits the total pack size, including its catalog.
-The output directory must be outside the source directory. Existing generated
-files are overwritten.
+The three options set the file-count budget, total pack byte budget, and output
+directory. The command includes files in subdirectories and overwrites previous
+outputs. File paths determine the generated names, so `hero.png` becomes
+`ids::HERO`.
 
-## Inputs
+## Use the assets
 
-The packer includes regular files recursively, preserving their bytes without
-decoding them. Empty files and files without extensions are supported. Symlinks
-are rejected.
-
-Generated names come from relative paths:
-
-```text
-assets/hero.png       -> ids::HERO
-assets/music.ogg      -> ids::MUSIC
-assets/levels/intro   -> ids::LEVELS_INTRO
-```
-
-The final extension is removed, `/` and `-` become `_`, and letters become
-uppercase. Names must start with an ASCII letter and contain only ASCII letters,
-digits, and underscores. Duplicate names are rejected. Numeric IDs follow sorted
-relative-path order and can change between builds.
-
-Limits are 4096 files, 8192 directory entries, 1024 bytes per relative path, and
-a pack budget of 16 bytes to 1 GiB.
-
-## Use the output
-
-Keep `assets.gen.rs` and `assets.pack` together. Include the generated module in
-a crate that depends on `game-core`:
+The generated module uses `game-core`. Add it as a dependency if needed, then
+include the module from `src/lib.rs` or `src/main.rs`, with both generated files
+in `src/generated`:
 
 ```rust
 #[path = "generated/assets.gen.rs"]
 mod baked;
 ```
 
-Retrieve an asset's bytes:
+Read an asset inside a function that propagates
+`game_core::asset::AssetError`:
 
 ```rust
 let pack = baked::EmbeddedPack::from_bytes(baked::PACK_BYTES)?;
 let hero_bytes = pack.bytes(baked::ids::HERO)?;
 ```
 
-Both generated files are needed at compile time, not at runtime.
+The program embeds the pack at compile time, so the generated files do not need
+to be distributed alongside the executable.
 
-## Cargo build integration
+## Build with Cargo
 
-Add `asset-packer` as a build dependency. In `build.rs`, call
-`asset_packer::build(sources, output, max_assets, max_bytes)` with `&Path`
-directories and `usize` limits, using `OUT_DIR` for output. Propagate errors
-to fail the build.
-
-Emit `cargo::rerun-if-changed=assets` to track source changes, additions, and
-removals. If inputs are generated during the build, watch their original sources
-instead and recreate the generated input directory on each build-script run.
+To generate the pack during builds, add `asset-packer` as a build dependency.
+In `build.rs`, call `asset_packer::build(sources, output, max_assets, max_bytes)`
+with `&Path` directories, `usize` budgets, and `OUT_DIR` as the output directory.
+Propagate the returned `io::Result<()>` and emit `cargo::rerun-if-changed=assets`
+to rebuild when the inputs change. Include the generated module with:
 
 ```rust
 mod baked {
-    include!(concat!(env!("OUT_DIR"), "/assets.gen.rs"));
+	include!(concat!(env!("OUT_DIR"), "/assets.gen.rs"));
 }
 ```

@@ -1,51 +1,54 @@
 # gamz
 
-A Rust game engine.
+gamz is a Rust game engine boilerplate. Use this repository as the starting point
+for your own game, and change the engine to suit your project.
 
-## Getting started
+## Build and run
 
-Requires [rustup](https://rustup.rs); the exact toolchain is pinned in `rust-toolchain.toml`.
-Run `cargo xtask setup` to install deployment targets and pinned versions of `cargo-deny` and Miri. `cargo xtask check` requires these tools without installing them.
-Building the Linux graphical platform also requires ALSA development files and `pkg-config` (`sudo apt-get install libasound2-dev pkg-config` on Debian/Ubuntu). These are also needed for the Linux all-features checks, but not for CLI-only builds.
+The included desktop platform uses Linux, X11, ALSA, and the `wgpu` renderer.
+Install [rustup](https://rustup.rs). On Debian or Ubuntu, install the build
+dependencies with:
+
+```sh
+sudo apt-get install libasound2-dev pkg-config
+```
+
+From the repository root, install the pinned Rust toolchain and start the game:
 
 ```sh
 rustup toolchain install
-git config core.hooksPath .githooks
 cargo run -p platform --features linux --bin linux --locked
-cargo xtask setup
-cargo xtask check
 ```
 
-Run the Linux graphical platform from the repository root with an X11 display, a supported GPU driver, and a working ALSA `default` playback device.
-Audio is independent of the window backend. Underruns restart playback; other audio failures terminate the platform.
+Run it in an X11 session with a supported GPU driver and an ALSA `default`
+playback device. The starter game opens a black canvas. Use `cargo build` in
+place of `cargo run` to build without launching, or add `--release` for an
+optimized build.
 
-For headless execution on Linux, run `cargo run -p platform --features cli --bin cli --locked`.
-The CLI loads real files relative to its working directory, using the same Linux file service as the graphical host, but does not initialize windowing, graphics, or an audio device.
-It writes initialization uploads to stdout first, then accepts one `FrameInput` JSON object per stdin line and writes the returned frame as one JSON line:
+## Make your game
 
-```sh
-printf '%s\n' '{"dt":{"secs":0,"nanos":16666667},"controller":{"move_right":{"ended":"down","half_transitions":1}}}' | cargo run -q -p platform --features cli --bin cli --locked
-```
+Start in [crates/game/src/lib.rs](crates/game/src/lib.rs). `GameState` implements
+the [Game trait](crates/platform-api/src/lib.rs), with methods for initialization,
+frame updates, and audio output. Replace the starter behavior with your game's
+state and logic. `game-entry` selects the game linked into the executable.
 
-To drive audio independently of visual updates, send `{"audio":{"sample_rate":48000,"frames":3}}`.
-The response contains `sample_rate` and `frames`, an array of signed 16-bit `[left,right]` pairs.
-Audio requests may be interleaved with visual-frame requests in the same process.
+For embedding assets, see the [asset-packer guide](crates/asset-packer/README.md).
 
-For controlled runs and retained evidence, use the [verification skill](.agents/skills/verify-game/SKILL.md). Serialization stays in the CLI so the game-side dependency graph remains free of `std` and `alloc`, even when Cargo unifies features in a full workspace build.
+## Extend the engine
 
-## Selecting a game
+The source is split by responsibility:
 
-Normal builds select `game`. To substitute an example, disable default features and select it through `game-entry`:
+- `crates/game-core` contains reusable game utilities, and `crates/game-memory`
+  provides arena storage.
+- `crates/platform` contains the host and operating-system services.
+  `crates/platform-api` defines the interface between the host and game.
+- `crates/renderer` contains rendering backends.
 
-```sh
-cargo run --release --locked -p platform --no-default-features \
-  --features linux,game-entry/example-benchmark --bin linux
-```
+Platform and renderer selection use Cargo features. The `linux` platform feature
+enables `renderer/wgpu`. To add another platform or renderer, start with the
+existing implementation and connect its feature in the
+[platform manifest](crates/platform/Cargo.toml) and
+[renderer manifest](crates/renderer/Cargo.toml).
 
-Use `cli` instead of `linux` in both arguments for headless execution. Cargo features are additive, so selecting an example without disabling the default game is an error. Each build selects exactly one game. Use `cargo xtask check` to check every selection rather than building the workspace with `--all-features`.
-
-For CPU/memory measurements and profiling with standard Linux tools, see [Benchmarking and profiling](.agents/skills/verify-game/feature-map/performance.md).
-
-## Contributing
-
-[AGENTS.md](AGENTS.md) defines the project's design and enforcement policies.
+To run the development checks, install their tools with `cargo xtask setup`,
+then run `cargo xtask check`.
