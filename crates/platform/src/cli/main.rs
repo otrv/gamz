@@ -11,6 +11,8 @@ mod services;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::process::ExitCode;
 
+use game::GameState as SelectedGame;
+use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::services::PlatformApi;
@@ -25,7 +27,7 @@ const MAX_INPUT_BYTES: usize = 16 * 1024;
 const MAX_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
 
 fn main() -> ExitCode {
-    match run() {
+    match run::<SelectedGame>() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("gamz cli: {error}");
@@ -34,7 +36,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+fn run<G: Game>() -> Result<(), Box<dyn std::error::Error>> {
     let mut persistent_bytes = PERSISTENT_MEMORY_BYTES;
     let mut transient_bytes = TRANSIENT_MEMORY_BYTES;
     let mut args = std::env::args_os().skip(1);
@@ -62,21 +64,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     audio.try_reserve_exact(MAX_AUDIO_FRAMES)?;
     audio.resize(MAX_AUDIO_FRAMES, StereoFrame::default());
     let mut output = BufWriter::new(io::stdout().lock());
-    let (state, uploads) = game::initialize(
-        PersistentMemory {
-            bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
-        },
-        TransientMemory {
-            bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
-        },
-        &PlatformApi { load_entire_file },
-    )?;
-    write_line(
-        &mut output,
-        &Startup {
-            uploads: Uploads(&uploads),
-        },
-    )?;
+    let state = {
+        let (state, uploads) = G::initialize(
+            PersistentMemory {
+                bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
+            },
+            TransientMemory {
+                bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
+            },
+            &PlatformApi { load_entire_file },
+        )?;
+        write_line(
+            &mut output,
+            &Startup {
+                uploads: Uploads(uploads.as_ref()),
+            },
+        )?;
+        state
+    };
 
     let mut input = BufReader::new(io::stdin().lock());
     let mut line = Vec::with_capacity(MAX_INPUT_BYTES + 1);
@@ -94,8 +99,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         match serde_json::from_slice(&line)? {
             Input::Frame(input) => {
-                let frame = game::update(
-                    state,
+                let frame = state.update(
                     TransientMemory {
                         bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
                     },
@@ -108,7 +112,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 frames,
             } => {
                 let frames = &mut audio[..frames];
-                game::update_audio(state, AudioBuffer::new(sample_rate, frames));
+                state.update_audio(AudioBuffer::new(sample_rate, frames));
                 write_line(
                     &mut output,
                     &AudioOutput {

@@ -23,6 +23,7 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 |---|---|
 | `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions |
 | crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) or `platform` (binary) |
+| `platform-api::Game` and generic host entrypoints | every selected game implements initialization, frame update, and audio update; hosts cannot call game-specific APIs |
 | `Cargo.toml` `[workspace.lints]` | fatal warnings and rejection of local weakening except for the macro-compatible `deny` lints below, in checked configurations; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
 | `clippy.toml` | API-shape lints also apply to public items |
 | `Cargo.toml` `[profile.release]` | overflow checks in release builds |

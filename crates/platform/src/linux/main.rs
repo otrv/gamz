@@ -12,6 +12,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use game::GameState as SelectedGame;
+use platform_api::Game;
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::services::{PlatformApi, StartupError};
@@ -115,7 +117,7 @@ impl ApplicationHandler for Platform {
 }
 
 fn main() -> std::process::ExitCode {
-    match run() {
+    match run::<SelectedGame>() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("gamz: {error}");
@@ -124,7 +126,7 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn run() -> Result<(), PlatformError> {
+fn run<G: Game>() -> Result<(), PlatformError> {
     let mut persistent = Vec::<u8>::new();
     persistent
         .try_reserve_exact(PERSISTENT_MEMORY_BYTES)
@@ -154,7 +156,7 @@ fn run() -> Result<(), PlatformError> {
         pollster::block_on(Renderer::new(Arc::clone(window), size.width, size.height))
             .map_err(PlatformError::Renderer)?;
     let state = {
-        let (state, uploads) = game::initialize(
+        let (state, uploads) = G::initialize(
             PersistentMemory {
                 bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
             },
@@ -164,7 +166,7 @@ fn run() -> Result<(), PlatformError> {
             &PlatformApi { load_entire_file },
         )
         .map_err(PlatformError::Startup)?;
-        for upload in uploads {
+        for &upload in uploads.as_ref() {
             renderer
                 .upload_texture(upload)
                 .map_err(PlatformError::Renderer)?;
@@ -202,8 +204,7 @@ fn run() -> Result<(), PlatformError> {
         };
         previous_frame = now;
         platform.controller.start_frame();
-        let frame = game::update(
-            state,
+        let frame = state.update(
             TransientMemory {
                 bytes: transient_bytes,
             },

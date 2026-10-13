@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use alsa::pcm::{Access, Format, Frames, HwParams, PCM, State};
 use alsa::{Direction, ValueOr};
+use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, SampleRate, StereoFrame};
 use rustix::io::Errno;
 
@@ -18,7 +19,7 @@ pub(super) struct Audio {
 }
 
 impl Audio {
-    pub(super) fn start(state: &mut game::GameState) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(super) fn start(state: &mut impl Game) -> Result<Self, Box<dyn std::error::Error>> {
         let pcm = PCM::open(c"default", Direction::Playback, true)?;
         let (sample_rate, target, device_frames) = {
             let parameters = HwParams::any(&pcm)?;
@@ -67,7 +68,7 @@ impl Audio {
         Ok(audio)
     }
 
-    pub(super) fn update(&mut self, state: &mut game::GameState) -> alsa::Result<()> {
+    pub(super) fn update(&mut self, state: &mut impl Game) -> alsa::Result<()> {
         match self.fill(state) {
             Err(error) if error.errno() == Errno::PIPE.raw_os_error() => {
                 self.pcm.prepare()?;
@@ -78,7 +79,7 @@ impl Audio {
         }
     }
 
-    fn fill(&mut self, state: &mut game::GameState) -> alsa::Result<()> {
+    fn fill(&mut self, state: &mut impl Game) -> alsa::Result<()> {
         if !self.pending.is_empty() {
             self.write_pending()?;
             if !self.pending.is_empty() {
@@ -99,7 +100,7 @@ impl Audio {
             return Ok(());
         }
         let frames = &mut self.frames[..requested];
-        game::update_audio(state, AudioBuffer::new(self.sample_rate, frames));
+        state.update_audio(AudioBuffer::new(self.sample_rate, frames));
         for (frame, bytes) in frames
             .iter()
             .zip(self.encoded.as_chunks_mut::<BYTES_PER_FRAME>().0)
