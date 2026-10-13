@@ -11,7 +11,7 @@ mod services;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::process::ExitCode;
 
-use game::GameState as SelectedGame;
+use game_entry::SelectedGame;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
 use platform_api::memory::{PersistentMemory, TransientMemory};

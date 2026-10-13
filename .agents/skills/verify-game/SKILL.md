@@ -15,7 +15,7 @@ Run from the repository root:
 .agents/skills/verify-game/scripts/verify-game launch
 ```
 
-This builds the CLI with locked dependencies and no graphical features into `target/verify-game`. Linux, Python 3, and the pinned Rust toolchain are required; X11 and a GPU are not. Each drive owns a fresh process, supplies steps serially, then closes stdin. Relaunch a process to reset game state. Re-run `launch` after source changes.
+This builds the default game through `game-entry` with locked dependencies and no graphical features into `target/verify-game`. Linux, Python 3, and the pinned Rust toolchain are required; X11 and a GPU are not. Each drive owns a fresh process, supplies steps serially, then closes stdin. Relaunch a process to reset game state. Re-run `launch` after source changes or after manually building another selection into the same target directory.
 
 ## Doctor
 
@@ -47,7 +47,7 @@ Both `dt` and `controller` are required. Omitted buttons mean released with zero
 
 The first output line contains complete texture uploads; each subsequent line is the returned visual frame or audio samples. Texture IDs are supplied by the game, not acknowledged by the caller. Commands contain all fields, including text glyph geometry. Observe these outputs and any relevant file effects; never inspect opaque game memory. See `crates/platform/src/cli/input.rs` and `output.rs` for the wire representation. For manual audio requests and playback verification, follow [Audio](feature-map/audio.md); the baseline `drive` covers visual frames only.
 
-The current game ignores inputs and returns an empty black frame. The baseline therefore proves the transport, not gameplay responses or cross-machine determinism. When gameplay is added, update the feature map and baseline assertions with concrete sequences and independently expected results.
+The default game ignores inputs and returns an empty black frame. The baseline therefore proves the transport, not gameplay responses or cross-machine determinism. When gameplay is added, update the feature map and baseline assertions with concrete sequences and independently expected results. Example selection and its separate correctness checks are described in [Benchmarking and profiling](feature-map/performance.md); the baseline assertions do not apply to examples.
 
 ## Rendering and platform behavior
 

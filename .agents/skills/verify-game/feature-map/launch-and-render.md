@@ -4,7 +4,7 @@
 
 Run `launch`, `doctor`, then `drive`. Expect an initialization record with `uploads: []`, followed by one frame per supplied input: canvas `[1280,720]`, clear `[0,0,0,255]`, and `commands: []`. No frames arrive without input. Inspect JSONL and status evidence; no display or GPU is needed.
 
-Real asset reads use the same file service as Linux, relative to the working directory. The current game does not load assets or return textures, so live game verification cannot yet exercise those paths. When the game gains assets, add a real asset-loading run rather than claiming the empty baseline covers it.
+Real asset reads use the same file service as Linux, relative to the working directory. The default game does not load assets or return textures, so its baseline cannot exercise those paths. The [benchmark example](performance.md) exercises embedded assets and texture uploads, but not external file reads. When a game loads external assets, add a real asset-loading run rather than claiming the empty baseline covers it.
 
 ## Rendering path: Linux only when affected
 

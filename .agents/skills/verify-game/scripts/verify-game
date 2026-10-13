@@ -24,7 +24,7 @@ FRAME = {"canvas": [1280, 720], "clear": [0, 0, 0, 255], "commands": []}
 
 def build(platform):
     subprocess.run([
-        "cargo", "build", "--locked", "-p", "platform", "--no-default-features",
+        "cargo", "build", "--locked", "-p", "platform",
         "--features", platform, "--bin", platform, "--target-dir", str(TARGET),
     ], cwd=ROOT, check=True, timeout=600)
 

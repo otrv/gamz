@@ -6,7 +6,7 @@ Supply `dt: {secs, nanos}` and `controller` in each input line. All twelve named
 
 Run `launch`, `doctor`, then `drive`. Inspect `controls-input.jsonl`, `controls-output.jsonl`, and the identical `replay-output.jsonl` in the printed run directory. The baseline sends all buttons, varied transition counts, and zero/fractional/maximum durations. Every input produces one empty black frame; `back` does not terminate the CLI.
 
-The current game ignores input. This live run proves complete-input acceptance and frame-loop operation, not game interpretation of every field. Add asymmetric, observable gameplay expectations when the game begins using input.
+The default game ignores input. This live run proves complete-input acceptance and frame-loop operation, not game interpretation of every field. Add asymmetric, observable gameplay expectations when the game begins using input.
 
 ## Platform path: Linux only when affected
 

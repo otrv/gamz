@@ -1,5 +1,3 @@
-#![no_std]
-
 mod assets;
 
 use assets::{Assets, ids};

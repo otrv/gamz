@@ -1,8 +1,11 @@
 [package]
-name = "benchmark-game"
+name = "examples"
 version = "0.1.0"
 edition.workspace = true
 publish.workspace = true
+
+[features]
+benchmark = []
 
 [dependencies]
 game-core = { path = "../game-core" }

@@ -23,17 +23,21 @@ cargo deny --workspace --locked check --deny warnings bans
 step "cargo deny (asset-packer: no dependencies)"
 cargo deny --manifest-path crates/asset-packer/Cargo.toml --config crates/asset-packer/deny.toml --locked check --deny warnings bans
 
+selections=$(cargo metadata --locked --format-version 1 --no-deps | jq -r '
+    .packages[] | select(.name == "game-entry") | .features | keys[] | select(. != "default")
+')
+
 for target in "${targets[@]}"; do
     if ! rustup target list --installed | grep -Fx "$target" >/dev/null; then
         rustup target add "$target"
     fi
     step "cargo clippy --target $target"
-    cargo clippy --workspace --all-targets --all-features --locked --target "$target"
+    cargo clippy --workspace --exclude platform --exclude game-entry --exclude examples --all-targets --all-features --locked --target "$target"
     cargo clippy -p renderer --no-default-features --all-targets --locked --target "$target"
-    for package in platform benchmark-platform; do
-        for feature in cli linux; do
-            step "cargo clippy ($package, $feature only) --target $target"
-            cargo clippy -p "$package" --no-default-features --features "$feature" --all-targets --locked --target "$target"
+    for selection in $selections; do
+        for feature in cli linux cli,linux; do
+            step "cargo clippy ($selection, $feature) --target $target"
+            cargo clippy -p platform --no-default-features --features "$feature,game-entry/$selection" --all-targets --locked --target "$target"
         done
     done
 done

@@ -7,7 +7,10 @@ allow-workspace = false
 multiple-versions = "allow"
 wildcards = "allow"
 deny = [
-    { crate = "game-core", wrappers = ["game", "benchmark-game"] },
-    { crate = "game-memory", wrappers = ["game", "benchmark-game"] },
-    { crate = "renderer", wrappers = ["platform", "benchmark-platform"] },
+    { crate = "game-core", wrappers = ["game", "examples"] },
+    { crate = "game-memory", wrappers = ["game", "examples"] },
+    { crate = "renderer", wrappers = ["platform"] },
+    { crate = "game", wrappers = ["game-entry"] },
+    { crate = "examples", wrappers = ["game-entry"] },
+    { crate = "game-entry", wrappers = ["platform"] },
 ]

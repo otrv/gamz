@@ -103,31 +103,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "benchmark-game"
-version = "0.1.0"
-dependencies = [
- "asset-packer",
- "game-core",
- "game-memory",
- "platform-api",
-]
-
-[[package]]
-name = "benchmark-platform"
-version = "0.1.0"
-dependencies = [
- "alsa",
- "benchmark-game",
- "platform-api",
- "pollster",
- "renderer",
- "rustix 1.1.5",
- "serde",
- "serde_json",
- "winit",
-]
-
-[[package]]
 name = "bit-set"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -387,6 +362,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "examples"
+version = "0.1.0"
+dependencies = [
+ "asset-packer",
+ "game-core",
+ "game-memory",
+ "platform-api",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -463,6 +448,14 @@ name = "game-core"
 version = "0.1.0"
 dependencies = [
  "platform-api",
+]
+
+[[package]]
+name = "game-entry"
+version = "0.1.0"
+dependencies = [
+ "examples",
+ "game",
 ]
 
 [[package]]
@@ -1190,7 +1183,7 @@ name = "platform"
 version = "0.1.0"
 dependencies = [
  "alsa",
- "game",
+ "game-entry",
  "platform-api",
  "pollster",
  "renderer",

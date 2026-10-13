@@ -6,6 +6,7 @@ publish.workspace = true
 autobins = false
 
 [features]
+default = ["game-entry/default"]
 cli = ["dep:rustix", "dep:serde", "dep:serde_json"]
 linux = ["dep:alsa", "dep:renderer", "renderer/wgpu", "dep:pollster", "dep:rustix", "dep:winit"]
 
@@ -20,7 +21,7 @@ path = "src/cli/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-game = { path = "../game" }
+game-entry = { path = "../game-entry", default-features = false }
 platform-api = { path = "../platform-api" }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"], optional = true }
 serde_json = { version = "1.0", default-features = false, features = ["std"], optional = true }

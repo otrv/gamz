@@ -2,16 +2,17 @@
 
 ## Correctness before performance
 
-The baseline helper still selects the regular `game`. The manifest-only `benchmark-platform` selects `benchmark-game` under the same dependency name and compiles the unchanged production host sources; keep its host dependencies aligned with `platform` when changing them. Normal builds do not select either benchmark package.
+The baseline helper selects the regular `game`. The `game-entry/example-benchmark` feature substitutes the benchmark in `crates/examples/benchmark` through the same production hosts and `platform-api::Game` trait. Disable default features when selecting an example; Cargo rejects conflicting game selections. Use a separate target directory so the example does not replace the baseline helper's executable.
 
 ```sh
-cargo build --locked -p benchmark-platform --features cli --bin benchmark-cli --target-dir target/verify-game
-printf '%s\n' '{"dt":{"secs":0,"nanos":0},"controller":{}}' | target/verify-game/debug/benchmark-cli
+cargo build --locked -p platform --no-default-features \
+    --features cli,game-entry/example-benchmark --bin cli --target-dir target/verify-example
+printf '%s\n' '{"dt":{"secs":0,"nanos":0},"controller":{}}' | target/verify-example/debug/cli
 ```
 
 Health-check each fresh process: require two complete texture uploads before supplying input, and zero status on EOF. Preserve complete output, not only counts or hashes. Compare two fresh processes given the same sequence: two zero-dt frames, enough positive-dt frames to cross entity recycling, zero dt again, and interleaved audio requests. Require identical replays, unchanged output during zero dt, changed positions during positive dt, and preserved sprite counts through recycling. On separate fresh states, 0.1 seconds and the maximum valid duration should match because the example caps elapsed time. Controller/back values should not change this example's output or terminate the CLI; requested audio frames are currently silent. These are example-specific checks, not new assertions for the regular-game helper.
 
-For rendered pixels, run `cargo run --locked -p benchmark-platform --features linux --bin benchmark-linux`. Health-check the `gamz` window, adapter, and nonzero rendered-command log. Capture and inspect the populated scene, clipped sprites, text, and animation; then focus the window, send Escape, and require exit zero. Keep capture work separate from timed runs.
+For rendered pixels, run `cargo run --locked -p platform --no-default-features --features linux,game-entry/example-benchmark --bin linux --target-dir target/verify-example`. Health-check the `gamz` window, adapter, and nonzero rendered-command log. Capture and inspect the populated scene, clipped sprites, text, and animation; then focus the window, send Escape, and require exit zero. Keep capture work separate from timed runs.
 
 ## Measure the normal platform
 
@@ -20,14 +21,14 @@ Build the current working tree, including uncommitted edits, in release mode fro
 ```sh
 native="$(rustc -Vv | sed -n 's/^host: //p')"
 CARGO_PROFILE_RELEASE_DEBUG=line-tables-only cargo build --release --locked \
-    -p benchmark-platform --features linux --bin benchmark-linux \
+    -p platform --no-default-features --features linux,game-entry/example-benchmark --bin linux \
     --target "$native" --target-dir target/benchmark
 ```
 
 Only after a successful build, measure one fresh process for ten seconds. Do not time `cargo run`:
 
 ```sh
-binary="target/benchmark/$native/release/benchmark-linux"
+binary="target/benchmark/$native/release/linux"
 /usr/bin/time -v timeout --kill-after=2s 10s "$binary"
 ```
 

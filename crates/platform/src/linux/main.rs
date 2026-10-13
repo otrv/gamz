@@ -12,7 +12,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use game::GameState as SelectedGame;
+use game_entry::SelectedGame;
 use platform_api::Game;
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
