@@ -29,6 +29,7 @@ for target in "${targets[@]}"; do
     fi
     step "cargo clippy --target $target"
     cargo clippy --workspace --all-targets --all-features --locked --target "$target"
+    cargo clippy -p renderer --no-default-features --all-targets --locked --target "$target"
     for package in platform benchmark-platform; do
         for feature in cli linux; do
             step "cargo clippy ($package, $feature only) --target $target"

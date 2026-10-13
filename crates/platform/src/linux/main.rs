@@ -16,7 +16,7 @@ use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInp
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::services::{PlatformApi, StartupError};
 use platform_api::timing::DeltaTime;
-use renderer_wgpu::{Renderer, RendererError};
+use renderer::wgpu::{Renderer, RendererError};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::error::{EventLoopError, OsError};

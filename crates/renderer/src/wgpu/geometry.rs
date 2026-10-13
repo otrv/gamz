@@ -1,4 +1,4 @@
-use crate::{GPU_QUADS, RendererError, Texture, error};
+use super::{GPU_QUADS, RendererError, Texture, error};
 use num_traits::ToPrimitive;
 use platform_api::render::{
     Camera, Canvas, CanvasRect, Color, Frame, MAX_COMMANDS, MAX_TEXTURES, PixelRect, RectStyle,
