@@ -1,12 +1,12 @@
 # gamz
 
-Rust game engine. Cargo workspace; every crate lives in `crates/<name>`.
+Rust game engine boilerplate. Every crate in the Cargo workspace lives in `crates/<name>`.
 
 ## Priorities
 
 Correctness, then predictability, then performance, then simplicity. Never trade a higher priority for a lower one.
 
-Choose the simplest design that preserves the known invariants. Keep zero known technical debt: call out concrete correctness and design problems even when previously accepted, and resolve them rather than knowingly commit them. Use `/grill-me` to settle unresolved design decisions before fixing them. Optional optimizations and hypothetical future requirements are not debt; do not commit speculative mechanisms or extension hooks merely to leave room for future improvements. The goal is ordinary, idiomatic Rust with unusually strong guardrails, not custom machinery.
+Choose the simplest design that preserves known invariants. Keep zero known technical debt. Report and resolve concrete correctness and design problems, even if previously accepted, rather than knowingly commit them. Use `/grill-me` to settle unresolved design decisions before fixing them. Optional optimizations and hypothetical future requirements are not debt. Do not commit speculative mechanisms or extension hooks merely for future improvements. Prefer ordinary, idiomatic Rust with strong checks over custom machinery.
 
 ## Enforcement
 
@@ -32,9 +32,9 @@ Each rule is owned by the highest layer that can express it, and lower layers do
 | `crates/asset-packer/deny.toml` | `asset-packer` stays standalone with no crate dependencies, using only the Rust standard library; checked with all features, including build, development, and target-specific dependencies |
 | `crates/xtask/src/main.rs` | deployment targets, unsafe-crate list, and exact tool pins; `setup` installs prerequisites; `check` requires them and runs fmt, pinned `cargo-deny` bans, Clippy with all features for compatible crates, renderer without a backend, and every game selection from Cargo metadata through isolated and combined `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on the pinned `MIRI_TOOLCHAIN`; Cargo dependency resolution uses `--locked` |
 | `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `cargo xtask check` |
-| `AGENTS.md` and `/gamz-review` | working rules and semantic design rules, including bounds, unsafe proofs, game-side `std`/`alloc` exclusion, meaningful example use of `game-core` additions, example isolation beyond ordinary imports, complete example registration, debt versus speculative improvements, configuration correctness, comments, and local lint suppressions not caught by static checks |
+| `AGENTS.md` and `/gamz-review` | the working rules and design rules below, configuration correctness, and local lint suppressions not caught by static checks |
 
-Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(warnings)` so central exceptions remain possible; `forbidden_lint_groups` closes the compiler's compatibility escape hatch for local overrides. If a diagnostic is wrong for this project, change the policy centrally; do not distort clear code to satisfy it. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
+Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(warnings)` so central exceptions remain possible. `forbidden_lint_groups` prevents local overrides through the compiler's compatibility exception. Handle incorrect diagnostics under **Working rules**. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
 
 `forbid(warnings)` does not cover default-deny lints or linker warnings. Default-deny lints configurable on the pinned stable compiler are explicitly forbidden; nightly-only and compiler-internal lints are excluded. `rust_2024_compatibility` covers `dependency_on_unit_never_type_fallback` without naming a lint already removed by the Miri toolchain. `linker_messages` is forbidden separately.
 
@@ -47,7 +47,7 @@ Keep `xtask` a runner for standard tools, not a home for custom source checks or
 ## Working rules
 
 - Run `cargo xtask check` after changing anything. Work is not done until it passes. Never bypass the hook with `--no-verify`. Install missing prerequisites with `cargo xtask setup`; checks do not install tools.
-- When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central change to the user instead of dodging it locally.
+- When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central policy change to the user. Do not suppress it locally or distort clear code to satisfy it.
 - Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
 - After the same correction class occurs twice, use `/correct` to turn it into prevention: prefer architecture, then types, then a standard lint with a useful error, then a focused regression test, and prose or review guidance last.
 - Get the user's approval before creating a crate, changing a crate's public interface, adding a dependency between workspace crates, or adding an external crate dependency.
@@ -78,7 +78,6 @@ Keep `xtask` a runner for standard tools, not a home for custom source checks or
 
 ### Testing
 - Code unit tests are allowed only for small, reusable utilities in `game-core` and `game-memory`. They must assert stable utility behavior through the public utility interface; do not add change-detector tests that merely mirror an implementation, private state, or incidental call sequence.
-- Do not add code unit tests to `game`, `platform-api`, a platform, a renderer, or any other crate.
 - Verify game behavior by driving the production CLI with controlled input and observing its complete outputs. Verify platform behavior by running the affected platform. Use the repository's `verify-game` skill for the required commands and evidence.
 
 ### Invariants

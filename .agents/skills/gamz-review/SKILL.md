@@ -1,44 +1,44 @@
 ---
 name: gamz-review
-description: "Reviews gamz changes against the priorities, enforcement policy, and design rules in AGENTS.md that compiler, Clippy, and cargo xtask check cannot enforce. Use for /gamz-review, when asked to review a gamz diff, commit, or PR, and before finishing any change in this repository."
+description: "Reviews gamz changes against AGENTS.md where static checks cannot enforce it. Use for /gamz-review, gamz diff, commit, or PR reviews, and before finishing any repository change."
 ---
 
 # gamz review
 
-Judgment review of a change against [AGENTS.md](../../../AGENTS.md). Static checks own every rule they can express. This review owns the rest and does not duplicate them.
+Read [AGENTS.md](../../../AGENTS.md) for the rules. This skill defines how to review what static checks cannot enforce.
 
 ## Pre-change subtraction check
 
-Before implementing additions involving crates or dependencies, public APIs, scripts or custom checks, abstractions or protocols, tests, or documentation, establish:
+Before implementing additions involving crates, dependencies, public APIs, scripts, custom checks, abstractions, protocols, tests, or documentation, establish:
 
 - The concrete defect or requirement.
 - Why existing code, tooling, or review cannot own it without the addition.
 - The smallest alternative considered, including removal or reuse.
-- The maintenance surface added.
+- What the addition requires maintaining.
 - Whether user approval is required under **Working rules**, and whether it was obtained.
 
 For an existing diff, assess these against the pre-change state. Reject unjustified additions. Keep this judgment in review, not a custom script.
 
 ## Workflow
 
-1. Determine the scope: the paths, commits, or PR the user named. Otherwise use the diff against the merge base with `origin/main` (fall back to `main`), including uncommitted and untracked files. Apply the **Pre-change subtraction check**. Read whole touched functions, types, and modules when a rule needs context, such as bounds or ownership.
+1. Review the paths, commits, or PR the user named. Otherwise use the diff against the merge base with `origin/main`, falling back to `main`, including uncommitted and untracked files. Apply the **Pre-change subtraction check**. Read whole touched functions, types, and modules when rules such as bounds or ownership need context.
 2. Run `cargo xtask check`. If it fails, report that as the first finding and keep reviewing. Do not re-report anything the compiler, Clippy, rustfmt, or the runner detects.
-3. Check every change against **Priorities**, **Enforcement**, **Working rules**, and every **Design rules** subsection of `AGENTS.md`. Check required approvals against the available conversation; report missing evidence rather than assume approval. For **Layers**, inspect direct dependencies and complete boundary signatures, including nested types and errors, and verify ownership against that section.
-   Reject handwritten local lint suppressions not caught by compiler or Clippy policy, including suppression of the four macro-compatible `deny` lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten local suppressions.
+3. Check every change against **Priorities**, **Enforcement**, **Working rules**, and every **Design rules** subsection. Check required approvals against the conversation and report missing evidence. For **Layers**, inspect direct dependencies and complete boundary signatures, including nested types and errors, to verify ownership.
+   Reject handwritten local lint suppressions static checks miss, including suppressions of the four macro-compatible `deny` lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten suppressions.
 4. Review documentation changes separately against **Documentation**.
-5. If the change affects game-side code or its dependency graph, verify the **Layers** restrictions on `no_std`, `alloc`, and `std`, including affected transitive dependencies under the enabled features. Include dependency version and feature changes, not only new crates.
-   For added or expanded `game-core` functionality, trace each addition to a runtime path in `examples` and require execution evidence through the relevant CLI or graphical platform. Name the example and the observable behavior that depends on the addition. Reject unused imports, no-effect calls, test-only use, and examples whose demonstrated behavior would be unchanged if the added mechanism did nothing. Any example can satisfy the obligation; the benchmark need not cover every mechanism.
-   For example changes, check code, asset paths, and build inputs for reuse between examples, including shared helpers, `#[path]`, and `include!`/`include_bytes!` bypasses. Shared engine utilities and platforms are allowed. Verify every example directory has a selection in `game-entry`, so the Cargo feature matrix compiles it through both hosts. Do not replace absent modules with public sibling modules or introduce an alternative game interface outside the trait.
-6. Check that code unit tests exist only for lean, public-interface behavior of reusable `game-core` and `game-memory` utilities, never as implementation change detectors. For game changes, require production-CLI evidence; for platform changes, require evidence from running the affected platform. If the change touches an unsafe crate, check that every SAFETY contract proves soundness for all inputs a safe caller can supply, that the safe API cannot be misused to break it, and that its Miri tests exercise every unsafe block.
-7. For changes to manifests, lockfiles, toolchain or lint configuration, check scripts, hooks, CI, agent rules, or this skill, trace the affected enforcement path. Confirm lint inheritance, exact toolchain pins, deployment-target coverage, unsafe-crate lint parity, and local/CI check parity against **Enforcement** and **Working rules**. Ensure rules are neither weakened nor duplicated and that this skill covers the rules left to review.
+5. For game-side code or dependency changes, verify the **Layers** restrictions on `no_std`, `alloc`, and `std` through affected transitive dependencies and enabled features. Include version and feature changes, not only new crates.
+   For added or expanded `game-core` functionality, enforce the **Layers** example requirement with execution evidence from the relevant CLI or graphical platform. Trace each addition to its example, runtime path, and observable behavior. Reject evidence whose demonstrated behavior would be unchanged if the addition did nothing.
+   For example changes, enforce **Layers** isolation by inspecting code, asset paths, and build inputs, including shared helpers, `#[path]`, `include!`, and `include_bytes!`. Check every example directory's registration through `game-entry` and compilation through both hosts. Do not replace absent modules with public sibling modules or introduce a game interface outside the trait.
+6. Apply **Testing** to unit-test scope and quality. Require production-CLI evidence for game changes and execution of the affected platform for platform changes. For unsafe crates, check that every SAFETY contract proves soundness for every input a safe caller can supply. Verify that the safe API cannot violate the contract and Miri exercises every unsafe block.
+7. For manifests, lockfiles, toolchain or lint configuration, check tooling, hooks, CI, agent rules, or this skill, trace the affected enforcement path. Confirm lint inheritance, exact toolchain pins, deployment-target coverage, unsafe-crate lint parity, and parity between local and CI checks against **Enforcement** and **Working rules**. Ensure rules are neither weakened nor duplicated and this skill covers those left to review.
    When upgrading Rust, review the default-deny lint inventory against `rustc -W help`.
 8. Report. Do not edit code unless the user asks for fixes.
 
-Rules this review keeps catching that a higher layer could express are tooling gaps. So is anything a static layer should have caught but missed.
+Report recurring findings that a higher layer could enforce, and anything static checks should have caught, as tooling gaps.
 
 ## Report
 
-Group findings by kind. For each, cite `file:line`, the rule as `AGENTS.md › <subsection>`, why it applies, and a concrete fix:
+Group findings by kind. Cite `file:line`, the rule as `AGENTS.md › <subsection>`, why it applies, and a concrete fix for each:
 
 - **Violation**: breaks a rule.
 - **Concern**: a judgment call worth discussing.
@@ -46,9 +46,9 @@ Group findings by kind. For each, cite `file:line`, the rule as `AGENTS.md › <
 
 If nothing applies, say "No findings." Do not praise or restate static-check results.
 
-When performance impact is relevant, include before/after measurements and evidence in the completion report, or explicitly state what remains unmeasured. Follow `verify-game` for runtime performance.
+When performance impact is relevant, include before and after measurements and evidence, or state what remains unmeasured. Follow `verify-game` for runtime performance.
 
-For implementation work, end the completion report with this three-line receipt (not needed for a review-only request):
+For implementation work, end the completion report with this receipt. Omit it for review-only requests.
 
 ```text
 cargo xtask check: <result>
