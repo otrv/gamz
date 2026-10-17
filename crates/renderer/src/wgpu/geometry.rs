@@ -1,8 +1,8 @@
 use super::{GPU_QUADS, RendererError, Texture, error};
 use num_traits::ToPrimitive;
 use platform_api::render::{
-    Camera, Canvas, CanvasRect, Color, Frame, MAX_COMMANDS, MAX_TEXTURES, PixelRect, RectStyle,
-    RenderCommand, Sampling, Sprite,
+    Camera, Canvas, CanvasRect, Color, Frame, MAX_TEXTURES, PixelRect, RectStyle, RenderCommand,
+    Sampling, Sprite,
 };
 
 pub(super) const VERTEX_BYTES: usize = 48;
@@ -107,7 +107,6 @@ impl Geometry {
         viewport: Viewport,
         textures: &[Option<Texture>; MAX_TEXTURES],
     ) {
-        assert!(frame.commands.len() <= MAX_COMMANDS);
         self.bytes.clear();
         self.batches.clear();
         let mut state = State {
@@ -120,7 +119,7 @@ impl Geometry {
             [0.0, 0.0, frame.canvas.width(), frame.canvas.height()],
             frame.clear,
         );
-        for command in frame.commands {
+        for command in frame.commands() {
             match *command {
                 RenderCommand::SetCamera(camera) => {
                     state.camera = camera;

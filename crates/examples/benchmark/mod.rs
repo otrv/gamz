@@ -165,11 +165,11 @@ impl platform_api::Game for GameState {
             Color(133, 168, 186, 255),
             Sampling::Nearest,
         );
-        Frame {
-            canvas: Canvas::new(1280, 720),
-            clear: Color(16, 23, 34, 255),
-            commands: commands.finish(),
-        }
+        Frame::new(
+            Canvas::new(1280, 720),
+            Color(16, 23, 34, 255),
+            commands.finish(),
+        )
     }
 
     fn update_audio(&mut self, mut buffer: AudioBuffer<'_>) {

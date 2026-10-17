@@ -282,7 +282,7 @@ impl Renderer {
             self.resize(self.config.width, self.config.height)?;
         }
         Ok(Some(FrameStats {
-            commands: frame.commands.len(),
+            commands: frame.commands().len(),
             quads: (self.geometry.bytes.len() / (4 * VERTEX_BYTES)).saturating_sub(1),
             batches: self.geometry.batches.len(),
             vertex_bytes: self.geometry.bytes.len(),

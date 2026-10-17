@@ -331,7 +331,42 @@ pub enum RenderCommand<'a> {
 pub struct Frame<'a> {
     pub canvas: Canvas,
     pub clear: Color,
-    pub commands: &'a [RenderCommand<'a>],
+    commands: &'a [RenderCommand<'a>],
+}
+
+impl<'a> Frame<'a> {
+    #[must_use]
+    pub fn new(canvas: Canvas, clear: Color, commands: &'a [RenderCommand<'a>]) -> Self {
+        assert!(commands.len() <= MAX_COMMANDS);
+        let mut quads = 0;
+        for command in commands {
+            quads += match command {
+                RenderCommand::SetCamera(_) | RenderCommand::SetClip(_) => 0,
+                RenderCommand::DrawRect {
+                    style: RectStyle::Outline { .. },
+                    ..
+                } => 4,
+                RenderCommand::DrawText(text) => text.glyphs().len(),
+                RenderCommand::DrawSprite(_)
+                | RenderCommand::DrawRect {
+                    style: RectStyle::Filled(_),
+                    ..
+                }
+                | RenderCommand::DrawLine { .. } => 1,
+            };
+            assert!(quads <= MAX_QUADS);
+        }
+        Self {
+            canvas,
+            clear,
+            commands,
+        }
+    }
+
+    #[must_use]
+    pub fn commands(&self) -> &'a [RenderCommand<'a>] {
+        self.commands
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

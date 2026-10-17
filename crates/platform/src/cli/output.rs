@@ -1,7 +1,7 @@
 use platform_api::audio::{SampleRate, StereoFrame};
 use platform_api::render::{
-    Color, Frame, GlyphQuad, MAX_COMMANDS, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURES, PixelRect,
-    Rect, RectStyle, RenderCommand, Sampling, TextureUpload, Transform,
+    Color, Frame, GlyphQuad, MAX_TEXTURE_BYTES, MAX_TEXTURES, PixelRect, Rect, RectStyle,
+    RenderCommand, Sampling, TextureUpload, Transform,
 };
 use serde::{Serialize, Serializer};
 
@@ -86,7 +86,7 @@ impl Serialize for FrameOutput<'_> {
         Fields {
             canvas: [self.0.canvas.width(), self.0.canvas.height()],
             clear: color(self.0.clear),
-            commands: Commands(self.0.commands),
+            commands: Commands(self.0.commands()),
         }
         .serialize(serializer)
     }
@@ -96,21 +96,7 @@ struct Commands<'a>(&'a [RenderCommand<'a>]);
 
 impl Serialize for Commands<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        assert!(self.0.len() <= MAX_COMMANDS);
-        let mut quads = 0;
-        serializer.collect_seq(self.0.iter().map(|command| {
-            quads += match command {
-                RenderCommand::SetCamera(_) | RenderCommand::SetClip(_) => 0,
-                RenderCommand::DrawRect {
-                    style: RectStyle::Outline { .. },
-                    ..
-                } => 4,
-                RenderCommand::DrawText(text) => text.glyphs().len(),
-                _ => 1,
-            };
-            assert!(quads <= MAX_QUADS);
-            Command::from(command)
-        }))
+        serializer.collect_seq(self.0.iter().map(Command::from))
     }
 }
 

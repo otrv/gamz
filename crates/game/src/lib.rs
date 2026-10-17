@@ -30,11 +30,7 @@ impl platform_api::Game for GameState {
 
     fn update<'a>(&mut self, _memory: TransientMemory<'a>, _input: &FrameInput) -> Frame<'a> {
         debug_assert_eq!(self.0, 0);
-        Frame {
-            canvas: Canvas::new(1280, 720),
-            clear: Color(0, 0, 0, 255),
-            commands: &[],
-        }
+        Frame::new(Canvas::new(1280, 720), Color(0, 0, 0, 255), &[])
     }
 
     fn update_audio(&mut self, mut buffer: AudioBuffer<'_>) {
