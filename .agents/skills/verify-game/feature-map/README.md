@@ -1,11 +1,11 @@
 # gamz verification feature map
 
-Use CLI for game behavior. Use Linux window driving only for rendering and platform behavior. Add entries as gameplay, persistence, assets, or audio become observable; record concrete input sequences and expected outputs, not just successful process execution.
+Use the [verification skill](../SKILL.md) for launch, health checks, cleanup, and scope selection. Game-layer changes use only CLI paths. Run each platform path only when that specific platform is altered, including during maintenance audits. The entries below give feature-specific inputs, expected outputs, and coverage limits.
 
-| Feature | Entry | Default surface |
+| Feature | Entry | Verification path |
 | --- | --- | --- |
-| Initialization and frame output; optional pixel presentation | [Initialization and rendering](launch-and-render.md) | CLI; Linux for rendering |
-| Controller values and controlled time; keyboard integration | [Controller input](controller-input.md) | CLI; Linux for keyboard mapping |
-| Audio sample generation; device playback and underruns | [Audio](audio.md) | CLI; Linux for playback |
-| EOF/errors; Escape and window close | [Exit behavior](exit.md) | CLI; Linux for window lifecycle |
-| Opt-in example, CPU/memory measurement, CPU attribution | [Benchmarking and profiling](performance.md) | Benchmark CLI for correctness; Linux with time and optional perf |
+| Initialization, frames, and pixels | [Initialization and rendering](launch-and-render.md) | CLI for frames, Linux for pixels. |
+| Controller values, time, and keyboard mapping | [Controller input](controller-input.md) | CLI for game input, Linux for keyboard integration. |
+| Samples, playback, and underruns | [Audio](audio.md) | CLI for samples, Linux for playback. |
+| EOF, errors, Escape, and window close | [Exit behavior](exit.md) | CLI for protocol errors, Linux for window lifecycle. |
+| Benchmark correctness, CPU use, memory, and profiling | [Benchmarking and profiling](performance.md) | Example CLI with GNU time and optional perf. Linux measurements only for Linux changes. |

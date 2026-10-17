@@ -1,142 +1,109 @@
 # gamz
 
-Rust game engine boilerplate. Every crate in the Cargo workspace lives in `crates/<name>`.
+Rust game engine boilerplate. Every workspace crate lives in `crates/<name>`.
+
+Inherit the user's global `AGENTS.md`. This file adds project rules and overrides. Do not copy global rules here.
 
 ## Priorities
 
-Correctness, then predictability, then performance, then simplicity. Never trade a higher priority for a lower one.
+For this project, rank correctness, predictability, and performance in that order. Choose the simplest design that preserves those priorities.
 
-Choose the simplest design that preserves known invariants. Keep zero known technical debt. Report and resolve concrete correctness and design problems, even if previously accepted, rather than knowingly commit them. Use `/grill-me` to settle unresolved design decisions before fixing them. Optional optimizations and hypothetical future requirements are not debt. Do not commit speculative mechanisms or extension hooks merely for future improvements. Prefer ordinary, idiomatic Rust with strong checks over custom machinery.
+Resolve concrete correctness and design problems rather than knowingly commit them. Use `/grill-me` for unresolved design decisions. Optional optimizations and hypothetical requirements are not technical debt.
 
 ## Enforcement
 
-Each rule is owned by the highest layer that can express it, and lower layers do not restate it:
+Keep each rule at the highest layer that can enforce it. The table identifies the owners, not an additional checklist for rules those tools already enforce.
 
-1. types, visibility, and compile-time structure;
-2. compiler and Clippy policy;
-3. rustfmt;
-4. `cargo xtask check`, run by the pre-commit hook and CI;
-5. this file and the `/gamz-review` skill;
-6. a new tool, only when it prevents a meaningful class of defects the toolchain cannot express and clearly outweighs its maintenance cost.
+| Owner | Responsibility |
+| --- | --- |
+| `rust-toolchain.toml` | Exact Rust, rustfmt, and Clippy versions. |
+| Crate dependency graph | Layer direction. `game-core` cannot depend on `game` or the `platform` binary. |
+| `platform-api::Game` and generic host entrypoints | Initialization, frame updates, and audio updates through the shared game interface. |
+| `game-entry` features and the selected `examples` module | Exactly one game per build. Unselected example modules do not compile into the game. |
+| `Cargo.toml` workspace lints | Fatal diagnostics, restrictions on local lint overrides, unsafe-code isolation, Clippy `all` and `pedantic`, placeholder bans, SAFETY contracts, non-terminating loop signatures, explicit lifetimes, and reachable public items. |
+| `clippy.toml` | API-shape lints on public items. |
+| `Cargo.toml` release profile | Overflow checks in release builds. |
+| `deny.toml` | Allowed direct consumers of engine and game crates across the resolved all-features graph, including development and target-specific dependencies. |
+| `crates/asset-packer/deny.toml` | No crate dependencies for `asset-packer`, including build, development, and target-specific dependencies. |
+| `crates/xtask/src/main.rs` | Deployment targets, `UNSAFE_CRATES`, exact tool pins, prerequisite installation, and locked checks. Checks cover formatting, dependency bans, compatible all-features builds, the renderer without a backend, every game selection with isolated and combined hosts, utility tests, and Miri. |
+| `.githooks/pre-commit` and `.github/workflows/ci.yml` | `cargo xtask check` before commits and in CI. |
+| This file | Rules that need judgment, configuration correctness, and handwritten lint suppressions that static checks miss. |
 
-| Layer | Owns |
-|---|---|
-| `rust-toolchain.toml` | exact Rust toolchain, rustfmt, and Clippy versions |
-| crate dependency graph | layer direction: `game-core` cannot depend on `game` (cycle) or `platform` (binary) |
-| `platform-api::Game` and generic host entrypoints | every selected game implements initialization, frame update, and audio update; hosts cannot call game-specific APIs |
-| `game-entry` features and the selected module in `examples` | exactly one game per build; unselected example modules are absent, so ordinary imports between examples cannot resolve |
-| `Cargo.toml` `[workspace.lints]` | fatal warnings and rejection of local weakening except for the macro-compatible `deny` lints below, in checked configurations; no unsafe code outside the unsafe crates; Clippy `all` + `pedantic` (including lossy casts); `dbg!`, `todo!`, `unimplemented!`; outer `#[allow]`; SAFETY contract presence, granularity, and necessity; non-terminating loops must return `!`; visible lifetimes; no unreachable `pub` |
-| `clippy.toml` | API-shape lints also apply to public items |
-| `Cargo.toml` `[profile.release]` | overflow checks in release builds |
-| `deny.toml` | allowed direct consumers of `game-core`, `game-memory`, `renderer`, `game`, `examples`, and `game-entry` in the resolved all-features workspace graph, including development and target-specific dependencies |
-| `crates/asset-packer/deny.toml` | `asset-packer` stays standalone with no crate dependencies, using only the Rust standard library; checked with all features, including build, development, and target-specific dependencies |
-| `crates/xtask/src/main.rs` | deployment targets, unsafe-crate list, and exact tool pins; `setup` installs prerequisites; `check` requires them and runs fmt, pinned `cargo-deny` bans, Clippy with all features for compatible crates, renderer without a backend, and every game selection from Cargo metadata through isolated and combined `cli` and `linux` features; `game-core` and `game-memory` unit tests on the host; Miri tests for `game-memory` on the pinned `MIRI_TOOLCHAIN`; Cargo dependency resolution uses `--locked` |
-| `.githooks/pre-commit`, `.github/workflows/ci.yml` | running `cargo xtask check` |
-| `AGENTS.md` and `/gamz-review` | the working rules and design rules below, configuration correctness, and local lint suppressions not caught by static checks |
+Configured diagnostics are fatal. Clippy groups stay at `warn` under `forbid(warnings)` so central exceptions remain possible. `forbidden_lint_groups` prevents local overrides through the compiler's compatibility exception. Add individual `nursery` or `restriction` lints only when they give consistent signal. Never enable the whole `restriction` group.
 
-Configured diagnostics are fatal. Clippy groups remain at `warn` under `forbid(warnings)` so central exceptions remain possible. `forbidden_lint_groups` prevents local overrides through the compiler's compatibility exception. Handle incorrect diagnostics under **Working rules**. Add individual `nursery` or `restriction` lints only when they give consistent signal, and never enable the whole `restriction` group. When a rule moves to a higher layer, update the table and delete the rule here.
+`forbid(warnings)` does not cover default-deny lints or linker warnings. Explicitly forbid default-deny lints configurable on the pinned stable compiler. Exclude nightly-only and compiler-internal lints. `rust_2024_compatibility` covers `dependency_on_unit_never_type_fallback` without naming a lint removed by the Miri toolchain. Forbid `linker_messages` separately.
 
-`forbid(warnings)` does not cover default-deny lints or linker warnings. Default-deny lints configurable on the pinned stable compiler are explicitly forbidden; nightly-only and compiler-internal lints are excluded. `rust_2024_compatibility` covers `dependency_on_unit_never_type_fallback` without naming a lint already removed by the Miri toolchain. `linker_messages` is forbidden separately.
+Keep `non_camel_case_types`, `non_upper_case_globals`, `unused_attributes`, and `clippy::useless_attribute` at `deny`. Serde derives generate allowances for them, so forbidding local suppression would reject generated code. This exception applies throughout the workspace.
 
-`non_camel_case_types`, `non_upper_case_globals`, `unused_attributes`, and `clippy::useless_attribute` remain at `deny` because Serde derives generate allowances for them. They remain fatal by default, but their local suppression cannot be forbidden without rejecting generated code. This exception applies throughout the workspace, not only inside derives.
+Reject handwritten local lint suppressions, including suppressions of those four lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten suppressions.
 
-Enforcement configuration is trusted, reviewed code. These checks prevent mistakes and local diagnostic suppression, not deliberate edits to the checks themselves. Hooks can be bypassed; requiring successful CI before integration is a repository-permissions policy. Passing checks do not establish runtime behavior or satisfy the review obligations above.
+Keep `xtask` a runner for standard tools. Do not add custom source checks, duplicate lint policy, or automate checks of repository configuration itself. Review configuration changes by tracing their enforcement path. Check lint inheritance, exact pins, deployment targets, unsafe-crate lint parity, and local and CI coverage. When upgrading Rust, compare the default-deny lint inventory with `rustc -W help`.
 
-Keep `xtask` a runner for standard tools, not a home for custom source checks or duplicated lint policy. Do not add automated checks that validate repository configuration itself. Configuration correctness, including lint inheritance and deployment targets, belongs in review; consuming configuration to run tools does not require a separate validation layer.
+Enforcement configuration is trusted code. Checks prevent mistakes, not deliberate edits to the checks themselves. Hooks can be bypassed. Requiring successful CI before integration is a repository-permissions policy, not a local check. Passing checks do not prove runtime behavior.
 
 ## Working rules
 
-- Run `cargo xtask check` after changing anything. Work is not done until it passes. Never bypass the hook with `--no-verify`. Install missing prerequisites with `cargo xtask setup`; checks do not install tools.
-- When a check fails, fix the code. If the diagnostic is wrong, stop and propose a central policy change to the user. Do not suppress it locally or distort clear code to satisfy it.
-- Use `/gamz-review` for every review request in this repository. Before finishing a change to Rust code, manifests, or tooling, run it on the change and resolve its findings.
-- After the same correction class occurs twice, use `/correct` to turn it into prevention: prefer architecture, then types, then a standard lint with a useful error, then a focused regression test, and prose or review guidance last.
-- Get the user's approval before creating a crate, changing a crate's public interface, adding a dependency between workspace crates, or adding an external crate dependency.
-- Create crates with `cargo new crates/<name>`; it inherits the workspace edition and lints. Every crate except the unsafe crates must inherit the workspace lints.
-- Unsafe code, raw pointers, and ABI details live only in the `UNSAFE_CRATES` listed in `crates/xtask/src/main.rs` (today `game-memory`), never in game logic. Adding one is a central policy change that needs the user's approval; otherwise choose libraries with safe APIs. An unsafe crate copies `[workspace.lints]` into its own `[lints]` tables with only `unsafe_code` changed to `"allow"`, and the copy changes whenever the workspace lints do. Miri tests in `game-memory` exercise every unsafe block.
-- Upgrade the toolchain deliberately: change the exact pin (or `MIRI_TOOLCHAIN`), run `cargo xtask setup` and `cargo xtask check`, fix new diagnostics or reject lints centrally, and commit everything together.
+- Run `cargo xtask check` after any change. Work is not done until it passes. Never use `--no-verify`. Install missing prerequisites with `cargo xtask setup`.
+- Fix failed checks. If a diagnostic is wrong, stop and propose a central policy change. Do not suppress it locally or distort clear code to satisfy it.
+- Before adding crates, dependencies, public APIs, scripts, checks, abstractions, protocols, tests, or documentation, identify the concrete requirement. Compare removal or reuse with the proposed addition and account for its maintenance cost.
+- Get approval before creating a crate, changing a crate's public interface, adding a workspace dependency, or adding an external crate dependency.
+- Create crates with `cargo new crates/<name>`. Every crate except the designated unsafe crates inherits the workspace edition and lints.
+- After the same correction class occurs twice, use `/correct`. Get approval before building a new prevention check.
+- Upgrade toolchain pins together with diagnostic fixes or approved central lint changes. Run `cargo xtask setup` and `cargo xtask check`, then commit the upgrade together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
-## Design rules
+For review requests, inspect the scope the user names. Otherwise review against the merge base with `origin/main`, falling back to `main`, including uncommitted and untracked files. Read whole affected functions, types, and modules where bounds or ownership require context. Run the checks and report failures first without duplicating tool diagnostics. Review prose against the documentation rules below. Report violations, unresolved concerns, and enforcement gaps with file locations, the applicable rule, and a concrete fix. Do not edit code during a review-only request.
 
-### Layers
-- Keep the platform a thin host adapter: it owns execution, access to the outside world, and the bytes of game memory, but never interprets those bytes or implements game-side mechanisms. The game owns their layout, initialization, and meaning, and all game rules. `game-core` owns the invariants of the reusable mechanisms it provides.
-- `platform-api` is the shared boundary: contracts and their validation only, never game selection, game mechanisms, or backend implementations. Game/platform boundary signatures use its types and an opaque game-owned state root. Selection belongs in `game-entry`, never in game implementations or host execution.
-- Platform and third-party library types never appear in game-side interfaces; the game expresses intent, not backend mechanism. Target-specific code and platform libraries stay inside the platform module for their target.
-- Platform supplies bounded persistent and transient byte regions; game-side code constructs arenas over them. Long-lived state stays inside the persistent root; frame scratch resets together. Game-side crates (`platform-api`, `game-core`, `game-memory`, `game`, `examples`, `game-entry`) are `#![no_std]`, never use `extern crate` to link `alloc` or `std`, and have runtime dependencies that use neither. Host-only build dependencies may use `std` and `alloc`.
-- New mechanisms in `game-core` must have game-independent semantics and be justified by concrete use in a game before extraction, not hypothetical future use. The main branch is reusable boilerplate: retain mechanisms extracted from games even after those games are removed. Absence of callers in the current `game` crate alone is not grounds for removal.
-- Any added or expanded `game-core` functionality must be used and illustrated in at least one game in `examples` in the same change. The example must demonstrate its intended behavior through normal runtime execution; unused imports, no-effect calls, and test-only examples do not count. Verification must name the example, the runtime path, and the observed behavior that depends on the addition. The benchmark is not required to demonstrate every mechanism.
-- Each example owns its game logic, assets, and example-specific build code in one directory. Examples never reuse another example's code or assets, including through shared helpers, source inclusion, or filesystem paths. Engine utilities, `asset-packer`, and platforms may be shared. Every example must be selectable through `game-entry`; unregistered example directories are incomplete changes.
-- Persistent game memory holds values, indices, handles, and offsets, never references or pointers, so its contents stay valid when game code is reloaded.
+## Architecture
 
-### Comments
-- No comments, including trailing comments and `#[doc = "..."]` attributes. Intent belongs in names, types, assertions, and structure.
-- Exceptions are a `// SAFETY:` contract or a `# Safety` doc section on an `unsafe fn` stating the proof obligation making the operation sound, and a generated-file header identifying the generator and warning against manual edits.
+- The platform owns execution, external access, and game-memory bytes. It never interprets those bytes or implements game-side mechanisms. The game owns memory layout, initialization, meaning, and game rules. `game-core` owns its reusable mechanisms' invariants.
+- `platform-api` contains shared contracts and their validation. It contains no game selection, game mechanisms, or backend implementations. Boundary signatures use its types and an opaque game-owned state root. Selection belongs in `game-entry`.
+- Keep platform and third-party library types out of game-side interfaces, including nested types and errors. Keep target-specific code and libraries inside the platform module for that target.
+- The platform supplies bounded persistent and transient byte regions. Game-side code constructs arenas over them. Long-lived state stays in the persistent root. Frame scratch resets together.
+- Game-side crates are `platform-api`, `game-core`, `game-memory`, `game`, `examples`, and `game-entry`. They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have runtime dependencies that use neither. Check transitive dependencies and enabled features when versions or features change. Host-only build dependencies may use both.
+- Extract mechanisms into `game-core` only from concrete game use and with game-independent semantics. Retain extracted mechanisms after their original games are removed. No callers in the current `game` crate alone is not grounds for removal.
+- Use every added or expanded `game-core` capability in an example in the same change. Demonstrate it through normal execution, not unused imports, no-effect calls, or tests alone. Name the example, runtime path, and observed behavior that depends on the capability. The benchmark need not demonstrate every mechanism.
+- Each example owns its logic, assets, and build code in one directory. Never reuse another example's code or assets through helpers, source inclusion, or filesystem paths. Engine utilities, `asset-packer`, and platforms may be shared. Register every example through `game-entry` and check it through both hosts. Do not expose sibling modules to bypass selection or introduce a game interface outside `platform-api::Game`.
+- Persistent game memory holds values, indices, handles, and offsets, never references or pointers. Its contents must remain valid when game code reloads.
 
-### Documentation
-- Code is the source of truth. Do not document demo games or restate what is evident in code; keep documentation to non-obvious rationale, setup, policy, and legal requirements.
-- Tool READMEs are standalone usage guides covering invocation, inputs, outputs, and integration. Omit conversation history and unrelated engine design.
+## Rust and runtime rules
 
-### Testing
-- Code unit tests are allowed only for small, reusable utilities in `game-core` and `game-memory`. They must assert stable utility behavior through the public utility interface; do not add change-detector tests that merely mirror an implementation, private state, or incidental call sequence.
-- Verify game behavior by driving the production CLI with controlled input and observing its complete outputs. Verify platform behavior by running the affected platform. Use the repository's `verify-game` skill for the required commands and evidence.
+- Use newtypes for confusable IDs, indices, units, and coordinate spaces. Use enums instead of related booleans or `Option` combinations. Keep fields private where constructors enforce validity.
+- Express fixed maxima as constants or const generics. Use `debug_assert!` only when removing the check cannot compromise correctness.
+- Internal bound violations panic. Return external exhaustion as an error. Never silently exceed a designed bound.
+- Do not use runtime recursion, including mutual recursion or recursion through closures or trait objects. Use bounded iteration or an explicit bounded stack. Non-terminating loops do bounded work per iteration.
+- Expected failures callers can act on use `Result`. Use `unwrap` or `expect` only for an immediate, locally obvious invariant or an intentionally fatal layer, never for external input or I/O. Discard results deliberately with `let _ =`.
+- Express intentional overflow with `checked_`, `wrapping_`, or `saturating_` operations. Arithmetic on external input must return expected errors rather than panic.
+- Borrow unless ownership must move. Keep mutable borrows and views short. Use `Rc`, `Arc`, `RefCell`, `Cell`, `Mutex`, and `.clone()` only for their required semantics, not to escape an ownership problem.
+- Let callers supply storage for dynamically sized results where practical. Arena and pool interfaces expose ordinary references and slices. Do not combine unrelated lifetimes in one arena.
+- Choose AoS, SoA, or a hybrid from actual access patterns. Use a hot/cold split when it reduces the working set. Do not specialize small or cold data without need.
+- Keep derived data's source and rebuild or invalidation rule explicit. Separate computation from mutation where it helps reasoning, without forcing purity.
+- Prefer synchronous, run-to-completion code. Do not add async runtimes, callback registries, event buses, macro machinery, or trait-object layers merely to reduce line count.
+- Model temporal behavior as state machines. Collect external events and process them at defined frame or tick boundaries. Introduce concurrency only for a concrete workload, with ownership, completion, cancellation, and synchronization visible.
+- Use fixed-width integers and explicit layout where representation is a contract, including serialization, GPU buffers, FFI, and packed IDs. Use `usize` for lengths and indexing. Make potentially lossy conversions' invariants visible.
+- Set dependency options that affect correctness, compatibility, persistence, security, or resources explicitly, including features and `default-features`. Unlike the global default-options rule, do not restate harmless defaults.
+- Include stack use and per-frame allocation in cost estimates. Avoid per-frame allocation in hot paths and quadratic work over entity counts.
 
-### Invariants
-- Make invalid states unrepresentable: newtypes for confusable values such as IDs, indices, units, and coordinate spaces; enums instead of related booleans or `Option` combinations; private fields and constructors that reject invalid states.
-- Express genuinely fixed maxima as constants or const generics.
-- Assert invariants the types cannot express. Use `debug_assert!` only where removing the check cannot compromise correctness.
+## Unsafe code
 
-### Bounds
-- Give everything that can grow, repeat, queue, retry, or consume resources a deliberate upper bound and an explicit failure policy: collections, buffers, channels, retries, loops over external input, and allocations sized by input. Prefer statically visible bounds; otherwise establish the bound at a trusted boundary and preserve it.
-- An internal bound violation is a programmer error and panics; external exhaustion is returned as an error. Never silently grow past a designed bound.
-- No runtime recursion, including mutual recursion and recursion through closures or trait objects. Use an explicit bounded stack or iteration.
-- Loops that never terminate do bounded work per iteration.
+Unsafe code, raw pointers, and ABI details belong only in `UNSAFE_CRATES` in `crates/xtask/src/main.rs`, currently `game-memory`. Never put them in game logic. Adding an unsafe crate needs approval as a central policy change. Otherwise use safe library APIs.
 
-### Failures
-- Broken invariants panic. Expected failures that callers can act on are `Result`s. Do not build recovery paths for programmer errors, and do not terminate on expected failures to shorten control flow.
-- `unwrap` and `expect` are fine when the invariant is immediate and locally obvious, or when the layer is intentionally fatal. Never use them on external input or I/O.
-- Discard results only deliberately, with `let _ =`.
+An unsafe crate copies the workspace lint tables, changing only `unsafe_code` to `"allow"`. Update the copy whenever workspace lints change.
 
-### Unsafe and unchecked operations
-- In designated low-level crates, keep each unsafe block narrow and behind a safe interface. Safe callers must not need to know the pointer, representation, aliasing, or lifetime rules.
-- Do not use unchecked operations such as `get_unchecked` for performance or convenience. When one is necessary, establish its invariant first and isolate it the same way as other unsafe code.
+Keep unsafe blocks narrow and behind safe interfaces. Each SAFETY contract must prove soundness for every input a safe caller can supply. Safe callers must not need pointer, representation, aliasing, or lifetime knowledge. Miri must exercise every unsafe block.
 
-### Arithmetic
-- Express intentional overflow with `checked_`, `wrapping_`, or `saturating_` operations. Arithmetic on external input must not panic where an error is expected.
+Do not use unchecked operations such as `get_unchecked` for convenience or performance alone. Establish a necessary operation's invariant first and isolate it behind a safe interface.
 
-### Ownership and lifetimes
-- Move ownership only when needed; otherwise borrow, preferring slices and other bounded views. Keep mutable borrows and borrowed views short.
-- Use `Rc`, `Arc`, `RefCell`, `Cell`, `Mutex`, and `.clone()` only when their semantics are required, never to escape a difficult ownership model.
-- Solve the lifetime problem first, then choose the allocation mechanism. Values that die together, such as per-frame or scratch data, are released or reset together. Do not create an arena without a shared end point, and do not merge unrelated lifetimes for convenience.
-- Let callers choose the storage for dynamically sized results where practical, such as `&mut Vec<T>` or an output slice. Arena-backed or pooled storage still exposes ordinary references and slices.
+## Comments and documentation
 
-### Data layout
-- For data processed in bulk, use contiguous storage, handles or indices instead of pointer graphs, and a hot/cold split where it reduces the working set.
-- Choose AoS, SoA, or a hybrid from the actual access pattern. Do not contort small or cold data into a specialized layout.
+The global comment ban also covers trailing comments and `#[doc = "..."]`. Project exceptions are `// SAFETY:` contracts, `# Safety` sections on unsafe functions, and generated-file headers naming the generator and warning against manual edits. Safety text states the proof obligation that makes the operation sound.
 
-### State
-- Keep one authoritative representation per fact. Derived or cached data needs a clear source and rebuild or invalidation rule.
-- Separate computation from mutation and effects where that simplifies reasoning, without forcing purity. Place behavior where its invariants are easiest to understand, not necessarily on the type it transforms.
+Code is the source of truth. Keep prose to non-obvious rationale, setup, policy, legal requirements, and executable verification recipes. Do not add demo-game guides or repeat behavior evident in code. Tool READMEs are standalone usage guides covering invocation, inputs, outputs, and integration. Omit conversation history and unrelated engine design.
 
-### Control flow
-- Prefer direct, synchronous, run-to-completion code. No async runtimes, callback registries, event buses, macro machinery, or trait-object layers whose main benefit is fewer lines.
-- Model temporal behavior as explicit state machines, not flags or call-order dependencies. Keep decisions near the state they change.
-- Collect external events and process them at defined frame or tick boundaries.
-- Introduce concurrency only for a concrete workload, with the narrowest mechanism, keeping shared ownership, pending work, completion, cancellation, and synchronization visible.
+## Verification
 
-### Boundaries
-- A module owns a coherent set of invariants and hides decisions likely to change. Callers cannot bypass those invariants through public fields, shared mutable state, or escape hatches.
-- Interfaces use domain types and enums instead of primitives and booleans, with names that distinguish materially different concepts.
-- Introduce an abstraction only when it hides a meaningful decision, enforces an invariant, or compresses understood behavior. No forwarding layers, speculative generics or traits, or mechanical mirroring of domain nouns.
-- Prefer composition and explicit data flow over trait hierarchies unless substitutability is a real domain property.
+Unit tests are allowed only for small, reusable utilities in `game-core` and `game-memory`. Apply the global behavior-testing rules through their public interfaces.
 
-### Representation
-- Use fixed-width integers and explicit layout (`#[repr]`, byte order) where width or layout is a contract: serialization, file formats, GPU buffers, FFI, and packed IDs. Use `usize` for lengths and indexing, and natural types for other in-memory values.
-- Make the invariant behind any potentially lossy conversion visible.
+Verify game-layer changes only through the production CLI, with controlled input and complete outputs. Run platform-specific verification only when that specific platform is altered. Game-layer changes alone never trigger graphical, keyboard, window, or device-playback checks. Apply the same boundary to performance measurements and verification-skill maintenance. Static checks still cover every configured target.
 
-### Dependencies
-- Add a dependency when it removes substantial work or defect risk, not for trivial convenience. Keep its surface narrow, and avoid dependencies that impose a runtime, scheduler, allocator, ownership model, or framework lifecycle on unrelated code.
-- Set dependency options that affect correctness, compatibility, persistence, security, or resources explicitly, such as `default-features` and features. Do not restate harmless defaults.
-
-### Budgets
-- Before committing to a design with significant cost, estimate bytes per item, item counts, per-frame work, buffer sizes, I/O, and stack use.
-- Avoid obviously wasteful choices, such as per-frame allocation in hot paths or quadratic work over entity counts. Batch along natural units of work. Back additional optimization complexity with measurements.
+Follow the repository's `verify-game` skill for commands and evidence. Report unmeasured performance impact as a limitation.

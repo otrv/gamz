@@ -1,11 +1,11 @@
 # gamz
 
-gamz is a Rust game engine boilerplate. Use this repository as the starting point
-for your own game, and change the engine to suit your project.
+gamz is a Rust game engine boilerplate. Start your game here and change the
+engine to suit your project.
 
 ## Build and run
 
-The included desktop platform uses Linux, X11, ALSA, and the `wgpu` renderer.
+The desktop platform uses Linux, X11, ALSA, and `wgpu`.
 Install [rustup](https://rustup.rs). On Debian or Ubuntu, install the build
 dependencies with:
 
@@ -34,21 +34,8 @@ state and logic. `game-entry` selects the game linked into the executable.
 
 For embedding assets, see the [asset-packer guide](crates/asset-packer/README.md).
 
-## Extend the engine
+## Check changes
 
-The source is split by responsibility:
-
-- `crates/game-core` contains reusable game utilities, and `crates/game-memory`
-  provides arena storage.
-- `crates/platform` contains the host and operating-system services.
-  `crates/platform-api` defines the interface between the host and game.
-- `crates/renderer` contains rendering backends.
-
-Platform and renderer selection use Cargo features. The `linux` platform feature
-enables `renderer/wgpu`. To add another platform or renderer, start with the
-existing implementation and connect its feature in the
-[platform manifest](crates/platform/Cargo.toml) and
-[renderer manifest](crates/renderer/Cargo.toml).
-
-To run the development checks, install their tools with `cargo xtask setup`,
-then run `cargo xtask check`.
+Install the development tools with `cargo xtask setup`, then run
+`cargo xtask check`. See [AGENTS.md](AGENTS.md) for project policies and
+[verify-game](.agents/skills/verify-game/SKILL.md) for runtime verification.

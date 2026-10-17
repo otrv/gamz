@@ -18,10 +18,17 @@ From your crate's directory, pack your assets into a separate output directory:
 asset-packer assets/ --max-assets 16 --max-bytes 1048576 --output src/generated
 ```
 
-The three options set the file-count budget, total pack byte budget, and output
-directory. The command includes files in subdirectories and overwrites previous
-outputs. File paths determine the generated names, so `hero.png` becomes
-`ids::HERO`.
+All three options are required. Set the file limit to at most 4,096 and the pack
+budget to 16 through 1,073,741,824 bytes, including the catalog. Keep the output
+directory outside the source directory. The command includes subdirectories
+and overwrites previous outputs.
+
+Use UTF-8 relative paths of at most 1,024 bytes. The packer visits at most 8,192
+directory entries and rejects symlinks and non-regular files. For generated
+names, it removes the last extension, replaces path separators and hyphens with
+underscores, and converts ASCII letters to uppercase. Names must start with an
+ASCII letter and contain only ASCII letters, digits, and underscores. Avoid
+collisions such as `hero.png` and `hero.bin`. Both produce `ids::HERO`.
 
 ## Use the assets
 

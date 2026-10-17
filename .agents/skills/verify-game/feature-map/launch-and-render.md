@@ -1,13 +1,13 @@
 # Initialization, frame output, and rendering
 
-## Game path: CLI
+## Check initialization and frames through the CLI
 
-Run `launch`, `doctor`, then `drive`. Expect an initialization record with `uploads: []`, followed by one frame per supplied input: canvas `[1280,720]`, clear `[0,0,0,255]`, and `commands: []`. No frames arrive without input. Inspect JSONL and status evidence; no display or GPU is needed.
+Run `launch`, `doctor`, then `drive`. Expect initialization with `uploads: []`. Each visual input returns a frame with canvas `[1280,720]`, clear `[0,0,0,255]`, and `commands: []`. No frames arrive without input. Inspect JSONL and status evidence.
 
 Real asset reads use the same file service as Linux, relative to the working directory. The default game does not load assets or return textures, so its baseline cannot exercise those paths. The [benchmark example](performance.md) exercises embedded assets and texture uploads, but not external file reads. When a game loads external assets, add a real asset-loading run rather than claiming the empty baseline covers it.
 
-## Rendering path: Linux only when affected
+## Check rendering only when Linux is altered
 
 Run `.agents/skills/verify-game/scripts/verify-game linux`. The platform requests a 1280×720 logical inner window titled `gamz`, initializes WGPU, and continuously presents the black frame. The helper uses a private Xvfb display; software Vulkan may supply the adapter in an orb.
 
-Inspect both `linux-before.png` and `linux-after.png` with `view_media`, and the retained `linux.log` for adapter and `commands=0 quads=0` stats. Require successful exit status. This proves pixel presentation and platform survival, not gameplay response. CLI output alone cannot verify rendering, scaling, clipping, GPU resource creation, or driver behavior.
+Inspect `linux-before.png` and `linux-after.png` with `view_media`. Expect a black canvas in both. Check `linux.log` for the adapter and `commands=0 quads=0` statistics, then require exit status zero. This verifies empty-frame presentation and process survival, not gameplay, scaling, clipping, or texture creation. Use the [benchmark rendering recipe](performance.md) for a populated scene. CLI commands alone do not prove rendered pixels.
