@@ -12,7 +12,8 @@ pub struct RenderCommands<'a> {
 impl<'a> RenderCommands<'a> {
     #[must_use]
     pub fn new(storage: &'a mut [RenderCommand<'a>], glyphs: &'a mut [GlyphQuad]) -> Self {
-        assert!(storage.len() <= MAX_COMMANDS && glyphs.len() <= MAX_QUADS);
+        assert!(storage.len() <= MAX_COMMANDS);
+        assert!(glyphs.len() <= MAX_QUADS);
         Self {
             storage,
             glyphs,

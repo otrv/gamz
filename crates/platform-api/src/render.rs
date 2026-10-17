@@ -13,7 +13,10 @@ pub struct Point {
 impl Point {
     #[must_use]
     pub fn new(x: f32, y: f32) -> Self {
-        assert!(x.is_finite() && y.is_finite() && x.abs() <= 1.0e12 && y.abs() <= 1.0e12);
+        assert!(x.is_finite());
+        assert!(y.is_finite());
+        assert!(x.abs() <= 1.0e12);
+        assert!(y.abs() <= 1.0e12);
         Self { x, y }
     }
 
@@ -37,7 +40,8 @@ pub struct Size {
 impl Size {
     #[must_use]
     pub fn new(width: f32, height: f32) -> Self {
-        assert!((0.0..=1.0e9).contains(&width) && (0.0..=1.0e9).contains(&height));
+        assert!((0.0..=1.0e9).contains(&width));
+        assert!((0.0..=1.0e9).contains(&height));
         Self { width, height }
     }
 
@@ -99,7 +103,8 @@ pub struct Canvas {
 impl Canvas {
     #[must_use]
     pub fn new(width: u16, height: u16) -> Self {
-        assert!((1..=16_384).contains(&width) && (1..=16_384).contains(&height));
+        assert!((1..=16_384).contains(&width));
+        assert!((1..=16_384).contains(&height));
         Self { width, height }
     }
 
@@ -143,7 +148,8 @@ pub struct Radians(f32);
 impl Radians {
     #[must_use]
     pub fn new(value: f32) -> Self {
-        assert!(value.is_finite() && value.abs() <= core::f32::consts::TAU);
+        assert!(value.is_finite());
+        assert!(value.abs() <= core::f32::consts::TAU);
         Self(value)
     }
 
