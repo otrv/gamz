@@ -2,8 +2,10 @@
 #[path = "benchmark/build.rs"]
 mod selected;
 
+#[cfg(feature = "benchmark")]
 fn main() -> std::io::Result<()> {
-    #[cfg(feature = "benchmark")]
-    selected::build()?;
-    Ok(())
+    selected::build()
 }
+
+#[cfg(not(feature = "benchmark"))]
+fn main() {}

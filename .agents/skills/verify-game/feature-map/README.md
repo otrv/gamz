@@ -9,3 +9,4 @@ Use the [verification skill](../SKILL.md) for launch, health checks, cleanup, an
 | Samples, playback, and underruns | [Audio](audio.md) | CLI for samples, Linux for playback. |
 | EOF, errors, Escape, and window close | [Exit behavior](exit.md) | CLI for protocol errors, Linux for window lifecycle. |
 | Benchmark correctness, CPU use, memory, and profiling | [Benchmarking and profiling](performance.md) | Example CLI with GNU time and optional perf. Linux measurements only for Linux changes. |
+| 2D math, SIMD, brick entities, and game states | [Breakout](breakout.md) | Play through the CLI and compare complete replays. |

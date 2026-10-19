@@ -6,6 +6,7 @@ publish.workspace = true
 
 [features]
 benchmark = []
+breakout = []
 
 [dependencies]
 game-core = { path = "../game-core" }
