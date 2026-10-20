@@ -7,6 +7,11 @@ use platform_api::render::{
     Frame, Image, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURES, Sampling, TextureUpload,
 };
 use std::fmt;
+#[cfg(target_arch = "wasm32")]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use wgpu::util::DeviceExt;
 
 const GPU_QUADS: usize = MAX_QUADS + 1;
@@ -58,6 +63,8 @@ pub struct Renderer {
     geometry: Geometry,
     failure: Failure,
     pending: [Option<wgpu::SubmissionIndex>; FRAMES_IN_FLIGHT],
+    #[cfg(target_arch = "wasm32")]
+    completed: [Arc<AtomicBool>; FRAMES_IN_FLIGHT],
     next_submission: usize,
 }
 
@@ -84,18 +91,8 @@ impl Renderer {
             .await
             .map_err(error)?;
         let failure = Failure::new(&device);
-        let mut config = surface
-            .get_default_config(&adapter, width.max(1), height.max(1))
-            .ok_or_else(|| error("surface unsupported"))?;
-        config.format = surface
-            .get_capabilities(&adapter)
-            .formats
-            .into_iter()
-            .find(wgpu::TextureFormat::is_srgb)
-            .ok_or_else(|| error("sRGB surface unavailable"))?;
-        config.present_mode = wgpu::PresentMode::Fifo;
-        config.desired_maximum_frame_latency = u32::try_from(FRAMES_IN_FLIGHT).unwrap();
-        let pipeline = make_pipeline(&device, config.format);
+        let config = surface_config(&surface, &adapter, width, height)?;
+        let pipeline = make_pipeline(&device, config.format.add_srgb_suffix());
         failure.check()?;
         let layout = pipeline.get_bind_group_layout(0);
         let samplers = [wgpu::FilterMode::Nearest, wgpu::FilterMode::Linear].map(|filter| {
@@ -154,6 +151,8 @@ impl Renderer {
             geometry: Geometry::new()?,
             failure,
             pending: std::array::from_fn(|_| None),
+            #[cfg(target_arch = "wasm32")]
+            completed: std::array::from_fn(|_| Arc::new(AtomicBool::new(true))),
             next_submission: 0,
         };
         renderer.resize(width, height)?;
@@ -202,6 +201,10 @@ impl Renderer {
 
     pub fn draw(&mut self, frame: &Frame<'_>) -> Result<Option<FrameStats>, RendererError> {
         self.failure.check()?;
+        #[cfg(target_arch = "wasm32")]
+        if !self.completed[self.next_submission].load(Ordering::Acquire) {
+            return Ok(None);
+        }
         if let Some(submission) = self.pending[self.next_submission].take() {
             self.failure.wait(&self.device, Some(submission))?;
         }
@@ -232,9 +235,10 @@ impl Renderer {
         };
         self.queue
             .write_buffer(&self.vertices, 0, &self.geometry.bytes);
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.config.format.add_srgb_suffix()),
+            ..Default::default()
+        });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -274,6 +278,13 @@ impl Renderer {
             }
         }
         self.pending[self.next_submission] = Some(self.queue.submit([encoder.finish()]));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let completed = Arc::clone(&self.completed[self.next_submission]);
+            completed.store(false, Ordering::Release);
+            self.queue
+                .on_submitted_work_done(move || completed.store(true, Ordering::Release));
+        }
         self.next_submission = (self.next_submission + 1) % FRAMES_IN_FLIGHT;
         self.failure.check()?;
         self.queue.present(output);
@@ -288,6 +299,33 @@ impl Renderer {
             vertex_bytes: self.geometry.bytes.len(),
         }))
     }
+}
+
+fn surface_config(
+    surface: &wgpu::Surface<'_>,
+    adapter: &wgpu::Adapter,
+    width: u32,
+    height: u32,
+) -> Result<wgpu::SurfaceConfiguration, RendererError> {
+    let mut config = surface
+        .get_default_config(adapter, width.max(1), height.max(1))
+        .ok_or_else(|| error("surface unsupported"))?;
+    if let Some(format) = surface
+        .get_capabilities(adapter)
+        .formats
+        .into_iter()
+        .find(wgpu::TextureFormat::is_srgb)
+    {
+        config.format = format;
+    }
+    let view_format = config.format.add_srgb_suffix();
+    if !view_format.is_srgb() {
+        return Err(error("sRGB surface view unavailable"));
+    }
+    config.view_formats = vec![view_format];
+    config.present_mode = wgpu::PresentMode::Fifo;
+    config.desired_maximum_frame_latency = u32::try_from(FRAMES_IN_FLIGHT).unwrap();
+    Ok(config)
 }
 
 fn make_texture(
