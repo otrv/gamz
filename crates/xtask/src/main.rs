@@ -1,16 +1,18 @@
-use std::env;
 use std::io::{self, Read};
 use std::path::Path;
 use std::process::{Command, ExitCode, Stdio};
+use std::{env, fs};
 
 use serde_json::Value;
 
-const TARGETS: &[&str] = &["x86_64-unknown-linux-gnu"];
+const WEB_TARGET: &str = "wasm32-unknown-unknown";
+const TARGETS: &[&str] = &["x86_64-unknown-linux-gnu", WEB_TARGET];
 const UNSAFE_CRATES: &[&str] = &["game-memory"];
 const MIRI_TOOLCHAIN: &str = "nightly-2026-10-01";
 const DENY_VERSION: &str = "0.20.2";
 const DENY_ARCHIVE_SHA256: &str =
     "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f";
+const WASM_BINDGEN_VERSION: &str = "0.2.129";
 const MAX_TOOL_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 fn cargo(arguments: &[&str]) -> Command {
@@ -64,6 +66,15 @@ fn deny_installed() -> bool {
         .is_ok_and(|version| version.trim_end_matches('\n') == format!("cargo-deny {DENY_VERSION}"))
 }
 
+fn wasm_bindgen_installed() -> bool {
+    capture(
+        Command::new("wasm-bindgen")
+            .arg("--version")
+            .stderr(Stdio::null()),
+    )
+    .is_ok_and(|version| version.trim() == format!("wasm-bindgen {WASM_BINDGEN_VERSION}"))
+}
+
 fn miri_installed() -> bool {
     capture(miri(&["--version"]).stderr(Stdio::null())).is_ok()
         && capture(
@@ -115,6 +126,15 @@ install -Dm755 "$temporary/$release/cargo-deny" "${CARGO_HOME:-"$HOME/.cargo"}/b
             ]))?;
         }
     }
+    if !wasm_bindgen_installed() {
+        run(&mut cargo(&[
+            "install",
+            "wasm-bindgen-cli",
+            "--version",
+            &format!("={WASM_BINDGEN_VERSION}"),
+            "--locked",
+        ]))?;
+    }
     if !miri_installed() {
         run(Command::new("rustup").args([
             "toolchain",
@@ -131,9 +151,9 @@ install -Dm755 "$temporary/$release/cargo-deny" "${CARGO_HOME:-"$HOME/.cargo"}/b
 }
 
 fn prerequisites() -> io::Result<()> {
-    if !deny_installed() || !miri_installed() {
+    if !deny_installed() || !miri_installed() || !wasm_bindgen_installed() {
         return Err(io::Error::other(format!(
-            "checks require cargo-deny {DENY_VERSION} and Miri with rust-src on {MIRI_TOOLCHAIN}; run cargo xtask setup"
+            "checks require cargo-deny {DENY_VERSION}, wasm-bindgen {WASM_BINDGEN_VERSION}, and Miri with rust-src on {MIRI_TOOLCHAIN}; run cargo xtask setup"
         )));
     }
     let installed = capture(Command::new("rustup").args(["target", "list", "--installed"]))?;
@@ -147,7 +167,7 @@ fn prerequisites() -> io::Result<()> {
     Ok(())
 }
 
-fn check_features() -> io::Result<()> {
+fn game_selections() -> io::Result<Vec<String>> {
     let metadata: Value = serde_json::from_str(&capture(&mut cargo(&[
         "metadata",
         "--locked",
@@ -167,12 +187,73 @@ fn check_features() -> io::Result<()> {
     if !selections.keys().any(|selection| selection != "default") {
         return Err(io::Error::other("game-entry has no game selections"));
     }
-    for target in TARGETS {
+    Ok(selections
+        .keys()
+        .filter(|selection| *selection != "default")
+        .cloned()
+        .collect())
+}
+
+fn web(selection: &str) -> io::Result<()> {
+    if !game_selections()?.iter().any(|name| name == selection) {
+        return Err(io::Error::other(format!(
+            "unknown game selection: {selection}"
+        )));
+    }
+    if !wasm_bindgen_installed() {
+        return Err(io::Error::other(
+            "wasm-bindgen is missing or has the wrong version; run cargo xtask setup",
+        ));
+    }
+    run(&mut cargo(&[
+        "build",
+        "-p",
+        "platform-web",
+        "--lib",
+        "--release",
+        "--locked",
+        "--target",
+        WEB_TARGET,
+        "--target-dir",
+        "target",
+        "--no-default-features",
+        "--features",
+        &format!("game-entry/{selection}"),
+    ]))?;
+    let output = format!("target/web/{selection}");
+    fs::create_dir_all(&output)?;
+    run(Command::new("wasm-bindgen").args([
+        &format!("target/{WEB_TARGET}/release/platform_web.wasm"),
+        "--target",
+        "web",
+        "--out-dir",
+        &output,
+        "--out-name",
+        "game",
+        "--no-typescript",
+    ]))?;
+    fs::copy(
+        "crates/platform-web/index.html",
+        Path::new(&output).join("index.html"),
+    )?;
+    let manifest = Path::new(&output).join("assets.json");
+    if !manifest.exists() {
+        fs::write(manifest, "[]\n")?;
+    }
+    println!("==> web build: {output}/index.html");
+    Ok(())
+}
+
+fn check_features() -> io::Result<()> {
+    let selections = game_selections()?;
+    for target in TARGETS.iter().filter(|target| **target != WEB_TARGET) {
         run(&mut cargo(&[
             "clippy",
             "--workspace",
             "--exclude",
             "platform",
+            "--exclude",
+            "platform-web",
             "--exclude",
             "game-entry",
             "--exclude",
@@ -193,10 +274,7 @@ fn check_features() -> io::Result<()> {
             "--target",
             target,
         ]))?;
-        for selection in selections
-            .keys()
-            .filter(|selection| *selection != "default")
-        {
+        for selection in &selections {
             for platform in ["cli", "linux", "cli,linux"] {
                 run(&mut cargo(&[
                     "clippy",
@@ -212,6 +290,31 @@ fn check_features() -> io::Result<()> {
                 ]))?;
             }
         }
+    }
+    run(&mut cargo(&[
+        "clippy",
+        "-p",
+        "renderer",
+        "--no-default-features",
+        "--lib",
+        "--locked",
+        "--target",
+        WEB_TARGET,
+    ]))?;
+    for selection in &selections {
+        run(&mut cargo(&[
+            "clippy",
+            "-p",
+            "platform-web",
+            "--lib",
+            "--no-default-features",
+            "--features",
+            &format!("game-entry/{selection}"),
+            "--locked",
+            "--target",
+            WEB_TARGET,
+        ]))?;
+        web(selection)?;
     }
     Ok(())
 }
@@ -269,12 +372,19 @@ fn execute() -> io::Result<()> {
         .expect("xtask lives in crates/xtask");
     env::set_current_dir(root)?;
     let mut arguments = env::args_os().skip(1);
-    match (arguments.next().as_deref(), arguments.next()) {
-        (Some(task), None) if task == "setup" => setup(),
-        (Some(task), None) if task == "check" => check(),
+    match (
+        arguments.next().as_deref(),
+        arguments.next(),
+        arguments.next(),
+    ) {
+        (Some(task), None, None) if task == "setup" => setup(),
+        (Some(task), None, None) if task == "check" => check(),
+        (Some(task), Some(selection), None) if task == "web" => web(selection
+            .to_str()
+            .ok_or_else(|| io::Error::other("game selection must be UTF-8"))?),
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: cargo xtask <setup|check>",
+            "usage: cargo xtask <setup|check|web GAME>",
         )),
     }
 }

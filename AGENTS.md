@@ -37,6 +37,8 @@ Keep `non_camel_case_types`, `non_upper_case_globals`, `unused_attributes`, and 
 
 Reject handwritten local lint suppressions, including suppressions of those four lints, allowances for centrally allowed lints, and attributes in unchecked configurations. Third-party macro-generated allowances are not handwritten suppressions.
 
+`platform-web` copies the workspace lint tables because `wasm-bindgen` generates allowances inside its callers. Only in that crate, use `deny` instead of `forbid` for `warnings`, `long_running_const_eval`, and the configured Clippy restriction lints. Keep all other levels identical to the workspace, including `unsafe_code = "forbid"`, and update the copy when workspace lints change. Handwritten suppressions remain prohibited.
+
 Keep `xtask` a runner for standard tools. Do not add custom source checks, duplicate lint policy, or automate checks of repository configuration itself. Review configuration changes by tracing their enforcement path. Check lint inheritance, exact pins, deployment targets, unsafe-crate lint parity, and local and CI coverage. When upgrading Rust, compare the default-deny lint inventory with `rustc -W help`.
 
 Enforcement configuration is trusted code. Checks prevent mistakes, not deliberate edits to the checks themselves. Hooks can be bypassed. Requiring successful CI before integration is a repository-permissions policy, not a local check. Passing checks do not prove runtime behavior.
@@ -47,7 +49,7 @@ Enforcement configuration is trusted code. Checks prevent mistakes, not delibera
 - Fix failed checks. If a diagnostic is wrong, stop and propose a central policy change. Do not suppress it locally or distort clear code to satisfy it.
 - Before adding crates, dependencies, public APIs, scripts, checks, abstractions, protocols, tests, or documentation, identify the concrete requirement. Compare removal or reuse with the proposed addition and account for its maintenance cost.
 - Get approval before creating a crate, changing a crate's public interface, adding a workspace dependency, or adding an external crate dependency.
-- Create crates with `cargo new crates/<name>`. Every crate except the designated unsafe crates inherits the workspace edition and lints.
+- Create crates with `cargo new crates/<name>`. Every crate inherits the workspace edition. Every crate except the designated unsafe crates and `platform-web` inherits the workspace lints.
 - After the same correction class occurs twice, use `/correct`. Get approval before building a new prevention check.
 - Upgrade toolchain pins together with diagnostic fixes or approved central lint changes. Run `cargo xtask setup` and `cargo xtask check`, then commit the upgrade together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
@@ -63,7 +65,7 @@ For review requests, inspect the scope the user names. Otherwise review against 
 - Game-side crates are `platform-api`, `game-core`, `game-memory`, `game`, `examples`, and `game-entry`. They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have runtime dependencies that use neither. Check transitive dependencies and enabled features when versions or features change. Host-only build dependencies may use both.
 - Extract mechanisms into `game-core` only from concrete game use and with game-independent semantics. Retain extracted mechanisms after their original games are removed. No callers in the current `game` crate alone is not grounds for removal.
 - Use every added or expanded `game-core` capability in an example in the same change. Demonstrate it through normal execution, not unused imports, no-effect calls, or tests alone. Name the example, runtime path, and observed behavior that depends on the capability. The benchmark need not demonstrate every mechanism.
-- Each example owns its logic, assets, and build code in one directory. Never reuse another example's code or assets through helpers, source inclusion, or filesystem paths. Engine utilities, `asset-packer`, and platforms may be shared. Register every example through `game-entry` and check it through both hosts. Do not expose sibling modules to bypass selection or introduce a game interface outside `platform-api::Game`.
+- Each example owns its logic, assets, and build code in one directory. Never reuse another example's code or assets through helpers, source inclusion, or filesystem paths. Engine utilities, `asset-packer`, and platforms may be shared. Register every example through `game-entry` and check it through every host. Do not expose sibling modules to bypass selection or introduce a game interface outside `platform-api::Game`.
 - Persistent game memory holds values, indices, handles, and offsets, never references or pointers. Its contents must remain valid when game code reloads.
 
 ## Rust and runtime rules

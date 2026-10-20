@@ -25,6 +25,49 @@ playback device. The starter game opens a black canvas. Use `cargo build` in
 place of `cargo run` to build without launching, or add `--release` for an
 optimized build.
 
+## Build for the web
+
+The web platform requires a desktop browser with WebGPU, a keyboard, and HTTPS.
+Localhost also works for development. It does not support WebGL or touch controls.
+
+Build your game from the repository root:
+
+```sh
+cargo xtask setup
+cargo xtask web game
+```
+
+Publish the entire `target/web/game/` directory on a static web host. Keep the
+`snippets/` directory and serve `.wasm` files as `application/wasm`. The build
+includes assets embedded by `asset-packer`. It needs no game server, JavaScript
+package manager, or cross-origin isolation headers.
+
+To embed the build in another page, set the iframe URL to its published location:
+
+```html
+<iframe
+	src="https://games.example.com/my-game/"
+	title="My game"
+	allow="autoplay"
+	style="width: 100%; aspect-ratio: 16 / 9; border: 0"
+></iframe>
+```
+
+Click **Play** to enable audio and keyboard input. Losing focus pauses the game
+and releases held keys. Click **Resume** to continue. The starter game displays
+a black canvas. To build an example, replace `game` with a selection from
+`crates/game-entry/Cargo.toml`, such as `example-breakout`.
+
+For files loaded through `PlatformApi::load_entire_file`, copy them into the
+output directory and list their relative paths in `assets.json`, for example
+`["assets/level.bin"]`. The browser loads these files before game initialization.
+Rebuilding preserves this manifest and added files. Keep your source assets
+outside `target/`, because `cargo clean` removes that directory.
+
+The manifest accepts at most 256 files, with a total budget of 64 MiB and a
+per-file limit of 16 MiB plus 8 bytes. Use relative paths without empty components,
+`.` or `..` components, backslashes, colons, nulls, `%`, `?`, or `#`.
+
 ## Make your game
 
 Start in [crates/game/src/lib.rs](crates/game/src/lib.rs). `GameState` implements
