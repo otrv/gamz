@@ -3,18 +3,36 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+run_step() {
+    local started=$SECONDS
+    printf '\n==> %s\n' "$*"
+    "$@"
+    printf '==> Finished in %s seconds\n' "$((SECONDS - started))"
+}
+
 if ! command -v rustup >/dev/null 2>&1 && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+    printf '\n==> Installing rustup\n'
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
 fi
 export PATH="$HOME/.cargo/bin:$PATH"
 
 if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update -q
-    sudo apt-get install -y -q libasound2-dev pkg-config libx11-xcb1 libxcursor1 libxi6 libxkbcommon-x11-0 libxrandr2 xvfb xdotool linux-perf time
+    missing_packages=()
+    for package in libasound2-dev pkg-config libx11-xcb1 libxcursor1 libxi6 libxkbcommon-x11-0 libxrandr2 xvfb xdotool linux-perf time; do
+        if [ "$(dpkg-query -W -f='${db:Status-Status}' "$package" 2>/dev/null || true)" != installed ]; then
+            missing_packages+=("$package")
+        fi
+    done
+    if [ "${#missing_packages[@]}" -gt 0 ]; then
+        run_step sudo apt-get update -q
+        run_step sudo apt-get install -y -q "${missing_packages[@]}"
+    else
+        printf '\n==> System packages already installed\n'
+    fi
 fi
 
-rustup toolchain install
-cargo fetch --locked
-cargo xtask setup
+run_step rustup toolchain install --no-self-update
+run_step cargo fetch --locked
+run_step cargo xtask setup
 
 git config core.hooksPath .githooks

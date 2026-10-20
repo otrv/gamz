@@ -9,6 +9,8 @@ const TARGETS: &[&str] = &["x86_64-unknown-linux-gnu"];
 const UNSAFE_CRATES: &[&str] = &["game-memory"];
 const MIRI_TOOLCHAIN: &str = "nightly-2026-10-01";
 const DENY_VERSION: &str = "0.20.2";
+const DENY_ARCHIVE_SHA256: &str =
+    "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f";
 const MAX_TOOL_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 fn cargo(arguments: &[&str]) -> Command {
@@ -83,13 +85,35 @@ fn setup() -> io::Result<()> {
         run(Command::new("rustup").args(["target", "add", target]))?;
     }
     if !deny_installed() {
-        run(&mut cargo(&[
-            "install",
-            "cargo-deny",
-            "--version",
-            &format!("={DENY_VERSION}"),
-            "--locked",
-        ]))?;
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            run(Command::new("sh").args([
+                "-eu",
+                "-c",
+                r#"
+temporary="$(mktemp -d)"
+trap 'rm -rf "$temporary"' EXIT
+release="cargo-deny-$1-x86_64-unknown-linux-musl"
+archive="$temporary/$release.tar.gz"
+url="https://github.com/EmbarkStudios/cargo-deny/releases/download/$1/$release.tar.gz"
+curl --proto '=https' --tlsv1.2 -fsSL "$url" -o "$archive"
+printf '%s  %s\n' "$2" "$archive" | sha256sum --check --strict -
+tar -xzf "$archive" -C "$temporary" "$release/cargo-deny"
+test "$("$temporary/$release/cargo-deny" --version)" = "cargo-deny $1"
+install -Dm755 "$temporary/$release/cargo-deny" "${CARGO_HOME:-"$HOME/.cargo"}/bin/cargo-deny"
+"#,
+                "install-cargo-deny",
+                DENY_VERSION,
+                DENY_ARCHIVE_SHA256,
+            ]))?;
+        } else {
+            run(&mut cargo(&[
+                "install",
+                "cargo-deny",
+                "--version",
+                &format!("={DENY_VERSION}"),
+                "--locked",
+            ]))?;
+        }
     }
     if !miri_installed() {
         run(Command::new("rustup").args([
