@@ -291,10 +291,10 @@ impl Geometry {
             });
         }
         let colors = [
-            linear(color.0),
-            linear(color.1),
-            linear(color.2),
-            f32::from(color.3) / 255.0,
+            linear(color.red),
+            linear(color.green),
+            linear(color.blue),
+            f32::from(color.alpha) / 255.0,
         ];
         let points = points.map(|[x, y]| {
             let x = (f64::from(x) - f64::from(state.camera.origin.x()))

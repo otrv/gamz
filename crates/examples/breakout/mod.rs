@@ -56,10 +56,30 @@ impl GameState {
                             132.0 + f32::from(row) * 40.0,
                         ),
                         color: [
-                            Color(248, 112, 108, 255),
-                            Color(255, 190, 110, 255),
-                            Color(112, 230, 204, 255),
-                            Color(156, 170, 255, 255),
+                            Color {
+                                red: 248,
+                                green: 112,
+                                blue: 108,
+                                alpha: 255,
+                            },
+                            Color {
+                                red: 255,
+                                green: 190,
+                                blue: 110,
+                                alpha: 255,
+                            },
+                            Color {
+                                red: 112,
+                                green: 230,
+                                blue: 204,
+                                alpha: 255,
+                            },
+                            Color {
+                                red: 156,
+                                green: 170,
+                                blue: 255,
+                                alpha: 255,
+                            },
                         ][usize::from(row)],
                     })
                     .expect("brick budget matches the grid");
@@ -320,49 +340,44 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
     let mut arena = Arena::new(bytes);
     let storage = arena.push_slice(BRICK_COUNT + 12, RenderCommand::SetClip(None));
     let mut commands = RenderCommands::new(storage, &mut []);
-    let wall = Color(73, 87, 108, 255);
-    for (x, y, width, height) in [
-        (16.0, 64.0, 1248.0, 8.0),
-        (16.0, TOP, 8.0, 632.0),
-        (RIGHT, TOP, 8.0, 632.0),
-    ] {
-        rect(
-            &mut commands,
-            Point::new(x, y),
-            Size::new(width, height),
-            wall,
-        );
-    }
-    for (_, brick) in state.bricks.iter() {
-        rect(
-            &mut commands,
-            Point::new(
-                brick.center.x() - BRICK_HALF.x,
-                brick.center.y() - BRICK_HALF.y,
-            ),
-            Size::new(BRICK_HALF.x * 2.0, BRICK_HALF.y * 2.0),
-            brick.color,
-        );
-    }
-    rect(
-        &mut commands,
-        Point::new(state.paddle.x() - PADDLE_HALF, PADDLE_Y),
-        Size::new(PADDLE_HALF * 2.0, 14.0),
-        Color(227, 238, 245, 255),
-    );
-    for life in 0..state.lives {
-        rect(
-            &mut commands,
-            Point::new(28.0 + f32::from(life) * 24.0, 28.0),
-            Size::new(14.0, 14.0),
-            Color(112, 230, 204, 255),
-        );
-    }
+    draw_court(state, &mut commands);
     let (ball, status) = match state.phase {
-        Phase::Ready => (Some(state.ready_ball()), Color(255, 190, 110, 255)),
-        Phase::Playing { ball, .. } => (Some(ball), Color(112, 230, 204, 255)),
-        Phase::Won => (None, Color(112, 230, 204, 255)),
-        Phase::Lost => (None, Color(248, 112, 108, 255)),
+        Phase::Ready => (
+            Some(state.ready_ball()),
+            Color {
+                red: 255,
+                green: 190,
+                blue: 110,
+                alpha: 255,
+            },
+        ),
+        Phase::Playing { ball, .. } => (
+            Some(ball),
+            Color {
+                red: 112,
+                green: 230,
+                blue: 204,
+                alpha: 255,
+            },
+        ),
+        Phase::Won => (
+            None,
+            Color {
+                red: 112,
+                green: 230,
+                blue: 204,
+                alpha: 255,
+            },
+        ),
+        Phase::Lost => (
+            None,
+            Color {
+                red: 248,
+                green: 112,
+                blue: 108,
+                alpha: 255,
+            },
+        ),
     };
     rect(
         &mut commands,
@@ -396,9 +411,65 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
     }
     Frame::new(
         Canvas::new(1280, 720),
-        Color(16, 23, 34, 255),
+        Color {
+            red: 16,
+            green: 23,
+            blue: 34,
+            alpha: 255,
+        },
         commands.finish(),
     )
+}
+
+fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) {
+    let wall = Color {
+        red: 73,
+        green: 87,
+        blue: 108,
+        alpha: 255,
+    };
+    for (x, y, width, height) in [
+        (16.0, 64.0, 1248.0, 8.0),
+        (16.0, TOP, 8.0, 632.0),
+        (RIGHT, TOP, 8.0, 632.0),
+    ] {
+        rect(commands, Point::new(x, y), Size::new(width, height), wall);
+    }
+    for (_, brick) in state.bricks.iter() {
+        rect(
+            commands,
+            Point::new(
+                brick.center.x() - BRICK_HALF.x,
+                brick.center.y() - BRICK_HALF.y,
+            ),
+            Size::new(BRICK_HALF.x * 2.0, BRICK_HALF.y * 2.0),
+            brick.color,
+        );
+    }
+    rect(
+        commands,
+        Point::new(state.paddle.x() - PADDLE_HALF, PADDLE_Y),
+        Size::new(PADDLE_HALF * 2.0, 14.0),
+        Color {
+            red: 227,
+            green: 238,
+            blue: 245,
+            alpha: 255,
+        },
+    );
+    for life in 0..state.lives {
+        rect(
+            commands,
+            Point::new(28.0 + f32::from(life) * 24.0, 28.0),
+            Size::new(14.0, 14.0),
+            Color {
+                red: 112,
+                green: 230,
+                blue: 204,
+                alpha: 255,
+            },
+        );
+    }
 }
 
 fn rect(commands: &mut RenderCommands<'_>, origin: Point, size: Size, color: Color) {

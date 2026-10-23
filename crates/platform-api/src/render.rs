@@ -120,10 +120,20 @@ impl Canvas {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Color(pub u8, pub u8, pub u8, pub u8);
+pub struct Color {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
 
 impl Color {
-    pub const WHITE: Self = Self(255, 255, 255, 255);
+    pub const WHITE: Self = Self {
+        red: 255,
+        green: 255,
+        blue: 255,
+        alpha: 255,
+    };
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

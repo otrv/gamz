@@ -232,8 +232,8 @@ impl Serialize for Glyphs<'_> {
     }
 }
 
-fn color(Color(r, g, b, a): Color) -> [u8; 4] {
-    [r, g, b, a]
+fn color(color: Color) -> [u8; 4] {
+    [color.red, color.green, color.blue, color.alpha]
 }
 
 fn rect(rect: Rect) -> [f32; 4] {

@@ -63,9 +63,24 @@ impl platform_api::Game for GameState {
                     speed: 18.0 + f32::from(row) * 2.0,
                     rotation: f32::from(column) * 0.1,
                     tint: match index % 3 {
-                        0 => Color(112, 230, 204, 220),
-                        1 => Color(255, 190, 110, 230),
-                        _ => Color(156, 170, 255, 210),
+                        0 => Color {
+                            red: 112,
+                            green: 230,
+                            blue: 204,
+                            alpha: 220,
+                        },
+                        1 => Color {
+                            red: 255,
+                            green: 190,
+                            blue: 110,
+                            alpha: 230,
+                        },
+                        _ => Color {
+                            red: 156,
+                            green: 170,
+                            blue: 255,
+                            alpha: 210,
+                        },
                     },
                 })
                 .expect("entity budget matches initialization")
@@ -108,30 +123,18 @@ impl platform_api::Game for GameState {
             origin: Point::new(sweep * 36.0, sweep * 12.0),
             zoom: Scale::new(1.0 + sweep * 0.025),
         }));
-        for column in 0..33_u16 {
-            let x = f32::from(column) * 40.0;
-            commands.push(RenderCommand::DrawLine {
-                start: Point::new(x, 90.0),
-                end: Point::new(x, 680.0),
-                width: StrokeWidth::new(1.0),
-                color: Color(33, 48, 65, 255),
-            });
-        }
-        for row in 0..16_u16 {
-            commands.push(RenderCommand::DrawRect {
-                rect: Rect::new(
-                    Point::new(0.0, 100.0 + f32::from(row) * 36.0),
-                    Size::new(1280.0, 16.0),
-                ),
-                style: RectStyle::Filled(Color(24, 35, 49, 255)),
-            });
-        }
+        draw_background(&mut commands);
         for pair in positions.as_chunks::<16>().0 {
             commands.push(RenderCommand::DrawLine {
                 start: pair[0],
                 end: pair[15],
                 width: StrokeWidth::new(1.5),
-                color: Color(78, 108, 130, 110),
+                color: Color {
+                    red: 78,
+                    green: 108,
+                    blue: 130,
+                    alpha: 110,
+                },
             });
         }
         let texture = self.assets.image(ids::SPRITE);
@@ -155,7 +158,12 @@ impl platform_api::Game for GameState {
             "GAMZ / PARTICLE GARDEN",
             Point::new(28.0, 24.0),
             Scale::new(3.0),
-            Color(227, 238, 245, 255),
+            Color {
+                red: 227,
+                green: 238,
+                blue: 245,
+                alpha: 255,
+            },
             Sampling::Nearest,
         );
         commands.draw_text(
@@ -163,18 +171,59 @@ impl platform_api::Game for GameState {
             "512 SPRITES / HANDLES / CAMERA / CLIP / TEXT",
             Point::new(28.0, 690.0),
             Scale::new(1.5),
-            Color(133, 168, 186, 255),
+            Color {
+                red: 133,
+                green: 168,
+                blue: 186,
+                alpha: 255,
+            },
             Sampling::Nearest,
         );
         Frame::new(
             Canvas::new(1280, 720),
-            Color(16, 23, 34, 255),
+            Color {
+                red: 16,
+                green: 23,
+                blue: 34,
+                alpha: 255,
+            },
             commands.finish(),
         )
     }
 
     fn update_audio(&mut self, mut buffer: AudioBuffer<'_>) {
         buffer.frames_mut().fill(StereoFrame::default());
+    }
+}
+
+fn draw_background(commands: &mut RenderCommands<'_>) {
+    for column in 0..33_u16 {
+        let x = f32::from(column) * 40.0;
+        commands.push(RenderCommand::DrawLine {
+            start: Point::new(x, 90.0),
+            end: Point::new(x, 680.0),
+            width: StrokeWidth::new(1.0),
+            color: Color {
+                red: 33,
+                green: 48,
+                blue: 65,
+                alpha: 255,
+            },
+        });
+    }
+    for row in 0..16_u16 {
+        commands.push(RenderCommand::DrawRect {
+            rect: Rect::new(
+                Point::new(0.0, 100.0 + f32::from(row) * 36.0),
+                Size::new(1280.0, 16.0),
+            ),
+            style: RectStyle::Filled(Color {
+                red: 24,
+                green: 35,
+                blue: 49,
+                alpha: 255,
+            }),
+        });
     }
 }
 
