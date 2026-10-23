@@ -261,7 +261,8 @@ fn find_hit(state: &GameState, ball: Point, delta: Vec2) -> Option<Hit> {
         }));
         let offsets = Vec2x4::from_array([Vec2::new(ball.x(), ball.y()); 4]) - centers;
         let distances = offsets.dot(offsets);
-        for (brick, distance) in batch.into_iter().zip(distances) {
+        let brick_distances = batch.into_iter().zip(distances);
+        for (brick, distance) in brick_distances {
             if let Some((id, brick)) = brick
                 && distance <= reach * reach
                 && let Some((fraction, normal)) = sweep(ball, delta, brick.center, half)

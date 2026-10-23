@@ -101,10 +101,10 @@ impl Audio {
         }
         let frames = &mut self.frames[..requested];
         state.update_audio(AudioBuffer::new(self.sample_rate, frames));
-        for (frame, bytes) in frames
+        let encoded_frames = frames
             .iter()
-            .zip(self.encoded.as_chunks_mut::<BYTES_PER_FRAME>().0)
-        {
+            .zip(self.encoded.as_chunks_mut::<BYTES_PER_FRAME>().0);
+        for (frame, bytes) in encoded_frames {
             bytes[..2].copy_from_slice(&frame.left.to_ne_bytes());
             bytes[2..].copy_from_slice(&frame.right.to_ne_bytes());
         }

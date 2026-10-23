@@ -13,7 +13,8 @@ use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::services::{FileError, MAX_FILE_BYTES, PlatformApi};
 use platform_api::timing::DeltaTime;
 use renderer::wgpu::Renderer;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 use web_sys::HtmlCanvasElement;
 use winit::application::ApplicationHandler;
@@ -167,7 +168,8 @@ async fn run<G: Game>(
             let rate = SampleRate::from_hz(sample_rate())
                 .ok_or_else(|| js_error("unsupported audio sample rate"))?;
             state.update_audio(AudioBuffer::new(rate, &mut samples));
-            for ((sample, left), right) in samples.iter().zip(&mut left).zip(&mut right) {
+            let channels = samples.iter().zip(&mut left).zip(&mut right);
+            for ((sample, left), right) in channels {
                 *left = f32::from(sample.left) / 32768.0;
                 *right = f32::from(sample.right) / 32768.0;
             }

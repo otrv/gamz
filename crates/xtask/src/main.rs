@@ -246,7 +246,8 @@ fn web(selection: &str) -> io::Result<()> {
 
 fn check_features() -> io::Result<()> {
     let selections = game_selections()?;
-    for target in TARGETS.iter().filter(|target| **target != WEB_TARGET) {
+    let native_targets = TARGETS.iter().filter(|target| **target != WEB_TARGET);
+    for target in native_targets {
         run(&mut cargo(&[
             "clippy",
             "--workspace",

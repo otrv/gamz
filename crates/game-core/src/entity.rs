@@ -122,7 +122,8 @@ impl<T: Copy, const CAPACITY: usize> EntityStorage<T, CAPACITY> {
     }
 
     pub fn clear(&mut self) {
-        for (index, slot) in self.slots.iter_mut().enumerate() {
+        let indexed_slots = self.slots.iter_mut().enumerate();
+        for (index, slot) in indexed_slots {
             *slot = Slot::Vacant { next: index + 1 };
         }
         self.first_free = 0;
@@ -236,7 +237,8 @@ mod tests {
             assert_eq!(entities.get_mut(id), None);
             assert_eq!(entities.remove(id), None);
         }
-        for (n, id) in new.into_iter().enumerate() {
+        let indexed_handles = new.into_iter().enumerate();
+        for (n, id) in indexed_handles {
             assert_eq!(entities.get(id), Some(&(n + 10)));
         }
         assert_eq!(entities.insert(99), Err(99));

@@ -3,7 +3,8 @@ use std::time::Duration;
 use platform_api::audio::{MAX_AUDIO_FRAMES, SampleRate};
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::timing::DeltaTime;
-use serde::{Deserialize, Deserializer, de::Error};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer};
 
 #[derive(Deserialize)]
 #[serde(try_from = "InputFields")]

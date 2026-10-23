@@ -285,10 +285,10 @@ mod tests {
             Vec2::new(-near_max.y, -near_max.x),
         ];
         let lengths = Vec2x4::from_array(values).length();
-        for (lane, expected) in [f32::MAX, f32::INFINITY, 5.0, f32::MAX]
+        let expected_lengths = [f32::MAX, f32::INFINITY, 5.0, f32::MAX]
             .into_iter()
-            .enumerate()
-        {
+            .enumerate();
+        for (lane, expected) in expected_lengths {
             assert_eq!(lengths[lane].to_bits(), expected.to_bits());
             assert_eq!(values[lane].length().to_bits(), expected.to_bits());
         }

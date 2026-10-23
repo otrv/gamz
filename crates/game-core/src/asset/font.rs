@@ -70,7 +70,8 @@ pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<F
         }; MAX_KERNING_PAIRS],
         kerning_count,
     };
-    for (index, glyph) in data.glyphs.iter_mut().enumerate() {
+    let indexed_glyphs = data.glyphs.iter_mut().enumerate();
+    for (index, glyph) in indexed_glyphs {
         let offset = 10 + index * 14;
         let x = word(bytes, offset);
         let y = word(bytes, offset + 2);
@@ -94,10 +95,10 @@ pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<F
         };
     }
     let mut previous_pair = None;
-    for (index, kerning) in data.kerning[..usize::from(kerning_count)]
+    let indexed_kerning = data.kerning[..usize::from(kerning_count)]
         .iter_mut()
-        .enumerate()
-    {
+        .enumerate();
+    for (index, kerning) in indexed_kerning {
         let offset = 10 + GLYPHS * 14 + index * 4;
         let pair = word(bytes, offset);
         if usize::from(pair) >= GLYPHS * GLYPHS

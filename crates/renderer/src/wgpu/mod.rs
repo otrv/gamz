@@ -8,10 +8,9 @@ use platform_api::render::{
 };
 use std::fmt;
 #[cfg(target_arch = "wasm32")]
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
+#[cfg(target_arch = "wasm32")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::util::DeviceExt;
 
 const GPU_QUADS: usize = MAX_QUADS + 1;

@@ -131,7 +131,8 @@ pub fn build(sources: &Path, output: &Path, max_assets: usize, max_bytes: usize)
         rust_number(u64::try_from(max_assets).unwrap()),
         rust_number(u64::try_from(max_bytes).unwrap()),
     );
-    for (index, asset) in assets.iter().enumerate() {
+    let indexed_assets = assets.iter().enumerate();
+    for (index, asset) in indexed_assets {
         let id = u32::try_from(index).unwrap();
         let path = sources.join(&asset.path);
         let bytes = read_bounded(&path, max_bytes - pack.len())?;

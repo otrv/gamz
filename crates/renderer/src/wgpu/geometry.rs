@@ -306,12 +306,13 @@ impl Geometry {
                 1.0 - y * 2.0 / f64::from(state.viewport.canvas.height()),
             ]
         });
-        for ([x, y], [u, v]) in points.into_iter().zip([
+        let vertices = points.into_iter().zip([
             [uv[0], uv[1]],
             [uv[2], uv[1]],
             [uv[2], uv[3]],
             [uv[0], uv[3]],
-        ]) {
+        ]);
+        for ([x, y], [u, v]) in vertices {
             let x = x.to_f32().unwrap();
             let y = y.to_f32().unwrap();
             for value in [

@@ -86,7 +86,8 @@ impl platform_api::Game for GameState {
         let TransientMemory { bytes: memory } = memory;
         let mut arena = Arena::new(memory);
         let positions = arena.push_slice(ENTITY_COUNT, Point::new(0.0, 0.0));
-        for (position, (_, particle)) in positions.iter_mut().zip(self.entities.iter()) {
+        let particle_positions = positions.iter_mut().zip(self.entities.iter());
+        for (position, (_, particle)) in particle_positions {
             *position = Point::new(particle.x, particle.y);
         }
         let storage = arena.push_slice(COMMAND_COUNT, RenderCommand::SetClip(None));
