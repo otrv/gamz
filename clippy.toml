@@ -1,1 +1,6 @@
 avoid-breaking-exported-api = false
+disallowed-methods = [
+    { path = "std::sync::PoisonError::into_inner", reason = "Propagate the poisoning error or terminate instead of recovering protected data." },
+    { path = "std::sync::PoisonError::get_ref", reason = "Propagate the poisoning error or terminate instead of recovering protected data." },
+    { path = "std::sync::PoisonError::get_mut", reason = "Propagate the poisoning error or terminate instead of recovering protected data." },
+]
