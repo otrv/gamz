@@ -2,8 +2,13 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-if (( $# != 0 )); then
-    echo 'usage: ./scripts/build-web' >&2
+profile=release
+directory=release
+if (( $# == 1 )) && [[ "$1" == --dev ]]; then
+    profile=dev
+    directory=debug
+elif (( $# != 0 )); then
+    echo 'usage: ./scripts/build-web [--dev]' >&2
     exit 2
 fi
 
@@ -13,9 +18,9 @@ if ! installed=$(wasm-bindgen --version 2>/dev/null) || [[ "$installed" != 'wasm
 fi
 
 set -x
-cargo build -p platform-web --lib --release --locked --target wasm32-unknown-unknown --target-dir target
+cargo build -p platform-web --lib --profile "$profile" --locked --target wasm32-unknown-unknown --target-dir target
 mkdir -p target/web/game
-wasm-bindgen target/wasm32-unknown-unknown/release/platform_web.wasm \
+wasm-bindgen "target/wasm32-unknown-unknown/$directory/platform_web.wasm" \
     --target web --out-dir target/web/game --out-name game --no-typescript
 cp crates/platform-web/index.html target/web/game/index.html
 if [[ ! -e target/web/game/assets.json ]]; then
