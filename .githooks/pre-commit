@@ -28,7 +28,7 @@ if ! "$all"; then
     git ls-files --others --exclude-standard -z >> "$changed"
     while IFS= read -r -d '' path; do
         case "$path" in
-            Cargo.toml|Cargo.lock|*/Cargo.toml|rust-toolchain.toml|clippy.toml|deny.toml|*/deny.toml|AGENTS.md|*/AGENTS.md|STYLE_GUIDE.md|.cargo/*|.githooks/*|.github/*|.agents/setup|scripts/*)
+            Cargo.toml|Cargo.lock|*/Cargo.toml|rust-toolchain.toml|clippy.toml|deny.toml|*/deny.toml|AGENTS.md|*/AGENTS.md|CODING_STANDARDS.md|.cargo/*|.githooks/*|.github/*|.agents/setup|scripts/*)
                 all=true ;;
             README.md|docs/*.md|crates/*/README.md|.agents/skills/*/*.md)
                 ;;

@@ -4,7 +4,7 @@ Rust game engine boilerplate. Every workspace crate lives in `crates/<name>`.
 
 Inherit the user's global `AGENTS.md`. This file adds project rules and overrides. Do not copy global rules here.
 
-Follow [STYLE_GUIDE.md](STYLE_GUIDE.md) for all code style, architecture, memory, runtime, unsafe-code, and documentation rules. This file covers agent workflow, enforcement maintenance, approvals, and verification.
+Follow [CODING_STANDARDS.md](CODING_STANDARDS.md) for all code style, architecture, memory, runtime, unsafe-code, and documentation rules. This file covers agent workflow, enforcement maintenance, approvals, and verification.
 
 ## Enforcement
 
@@ -26,7 +26,7 @@ Keep each rule at the highest layer that can enforce it. The table identifies th
 | `.githooks/pre-commit` | The check command list and affected-path routing. Full checks cover formatting, dependency bans, workspace all-features builds, isolated native hosts, web builds, utility tests, and Miri. |
 | `.github/workflows/ci.yml` | `.githooks/pre-commit --all` on every CI run. |
 | `verify-game` helper | CLI-only build and execution. Engine-contract assertions accept game-independent outputs; game-specific workloads and expectations are caller-supplied files. |
-| `STYLE_GUIDE.md` | Code style and design rules that need judgment, including memory and architecture boundaries and handwritten lint suppressions that static checks miss. |
+| `CODING_STANDARDS.md` | Code style and design rules that need judgment, including memory and architecture boundaries and handwritten lint suppressions that static checks miss. |
 | This file | Workflow, configuration correctness, approvals, and verification. |
 
 Configured diagnostics are fatal. Clippy groups stay at `warn` under `forbid(warnings)` so central exceptions remain possible. `forbidden_lint_groups` prevents local overrides through the compiler's compatibility exception. Add individual `nursery` or `restriction` lints only when they give consistent signal. Never enable the whole `restriction` group.
@@ -58,7 +58,7 @@ Resolve concrete correctness and design problems rather than knowingly commit th
 - Upgrade toolchain pins together with diagnostic fixes or approved central lint changes. Run `./scripts/setup` and `.githooks/pre-commit --all`, then commit the upgrade together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
-For review requests, inspect the scope the user names. Otherwise review against the merge base with `origin/main`, falling back to `main`, including uncommitted and untracked files. Read whole affected functions, types, and modules where bounds or ownership require context. Run the checks and report failures first without duplicating tool diagnostics. Review code and prose against `STYLE_GUIDE.md`. Report violations, unresolved concerns, and enforcement gaps with file locations, the applicable rule, and a concrete fix. Do not edit code during a review-only request.
+For review requests, inspect the scope the user names. Otherwise review against the merge base with `origin/main`, falling back to `main`, including uncommitted and untracked files. Read whole affected functions, types, and modules where bounds or ownership require context. Run the checks and report failures first without duplicating tool diagnostics. Review code and prose against `CODING_STANDARDS.md`. Report violations, unresolved concerns, and enforcement gaps with file locations, the applicable rule, and a concrete fix. Do not edit code during a review-only request.
 
 ## Verification
 

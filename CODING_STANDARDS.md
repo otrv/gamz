@@ -1,4 +1,4 @@
-# Rust style guide
+# Coding standards
 
 This document defines the project's code style, architecture, memory model,
 runtime rules, and documentation policy. Rank correctness, predictability, and
