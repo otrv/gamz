@@ -59,6 +59,12 @@ web_target=wasm32-unknown-unknown
 set -x
 if "$all" || "$format"; then
     cargo fmt --all -- --check
+    shear_version=$(cargo shear --version)
+    if [[ "$shear_version" != 'Version: 1.14.0' ]]; then
+        echo 'cargo-shear 1.14.0 is required; run ./scripts/setup' >&2
+        exit 1
+    fi
+    cargo shear --locked
 fi
 if "$all" || "$packer"; then
     deny_version=$(cargo deny --version)

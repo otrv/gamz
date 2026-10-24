@@ -9,6 +9,8 @@ fi
 
 deny_version=0.20.2
 deny_sha256=9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+shear_version=1.14.0
+shear_sha256=9004df4eb031a456026c4326ae0d0ce545321527a67be90f4524c1be729dc40e
 wasm_bindgen_version=0.2.129
 miri_toolchain=nightly-2026-10-01
 
@@ -33,6 +35,25 @@ if ! installed=$(cargo deny --version 2>/dev/null) || [[ "$installed" != "cargo-
     fi
 fi
 
+if ! installed=$(cargo shear --version 2>/dev/null) || [[ "$installed" != "Version: $shear_version" ]]; then
+    if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
+        (
+            temporary=$(mktemp -d)
+            trap 'rm -rf "$temporary"' EXIT
+            archive="$temporary/cargo-shear.tar.gz"
+            curl --proto '=https' --tlsv1.2 -fsSL \
+                "https://github.com/Boshen/cargo-shear/releases/download/v$shear_version/cargo-shear-x86_64-unknown-linux-musl.tar.gz" -o "$archive"
+            printf '%s  %s\n' "$shear_sha256" "$archive" | sha256sum --check --strict -
+            tar -xzf "$archive" -C "$temporary" cargo-shear
+            installed=$("$temporary/cargo-shear" --version)
+            test "$installed" = "Version: $shear_version"
+            install -Dm755 "$temporary/cargo-shear" "${CARGO_HOME:-"$HOME/.cargo"}/bin/cargo-shear"
+        )
+    else
+        cargo install cargo-shear --version "=$shear_version" --locked
+    fi
+fi
+
 if ! installed=$(wasm-bindgen --version 2>/dev/null) || [[ "$installed" != "wasm-bindgen $wasm_bindgen_version" ]]; then
     cargo install wasm-bindgen-cli --version "=$wasm_bindgen_version" --locked
 fi
@@ -44,6 +65,8 @@ fi
 
 installed=$(cargo deny --version)
 test "$installed" = "cargo-deny $deny_version"
+installed=$(cargo shear --version)
+test "$installed" = "Version: $shear_version"
 installed=$(wasm-bindgen --version)
 test "$installed" = "wasm-bindgen $wasm_bindgen_version"
 rustup run "$miri_toolchain" cargo miri --version
