@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
+import argparse
 import hashlib
+from itertools import zip_longest
 import json
 import os
 from pathlib import Path
 import select
 import shutil
 import subprocess
-import sys
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[4]
-TARGET = ROOT / "target" / "verify-game"
+TARGET = ROOT / "target/verify-game"
+BINARY = TARGET / "debug/cli"
 ARTIFACTS = ROOT / ".amp/in/artifacts/game-verification"
 MAX_RESPONSE_BYTES = 272 * 1024 * 1024
 BUTTONS = (
@@ -19,19 +21,52 @@ BUTTONS = (
     "action_up", "action_down", "action_left", "action_right",
     "left_shoulder", "right_shoulder", "back", "start",
 )
-FRAME = {"canvas": [1280, 720], "clear": [0, 0, 0, 255], "commands": []}
 
 
-def build(platform):
-    subprocess.run([
-        "cargo", "build", "--locked", "-p", "platform",
-        "--features", platform, "--bin", platform, "--target-dir", str(TARGET),
-    ], cwd=ROOT, check=True, timeout=600)
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
 
 
-def evidence_directory():
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="run-", dir=ARTIFACTS))
+def integers(values, count, low, high):
+    return isinstance(values, list) and len(values) == count and all(
+        type(value) is int and low <= value <= high for value in values)
+
+
+def validate(response, request=None):
+    require(isinstance(response, dict), "response must be an object")
+    if request is None:
+        require(set(response) == {"uploads"} and isinstance(response["uploads"], list),
+                "expected startup uploads")
+        require(len(response["uploads"]) <= 64, "too many uploads")
+        total = 0
+        for upload in response["uploads"]:
+            require(set(upload) == {"id", "image"} and integers([upload["id"]], 1, 0, 63),
+                    "invalid upload slot")
+            image = upload["image"]
+            require(set(image) == {"width", "height", "rgba"} and
+                    integers([image["width"], image["height"]], 2, 1, 2048), "invalid image size")
+            size = image["width"] * image["height"] * 4
+            require(integers(image["rgba"], size, 0, 255), "invalid RGBA payload")
+            total += size
+        require(total <= 64 * 1024 * 1024, "texture budget exceeded")
+    elif "audio" in request:
+        audio = request["audio"]
+        require(set(response) == {"sample_rate", "frames"} and
+                response["sample_rate"] == audio["sample_rate"] and
+                isinstance(response["frames"], list) and len(response["frames"]) == audio["frames"] and
+                all(integers(frame, 2, -32768, 32767) for frame in response["frames"]),
+                "incorrect audio rate, stereo count, or i16 samples")
+    else:
+        require(set(response) == {"canvas", "clear", "commands"}, "expected frame envelope")
+        require(isinstance(response["canvas"], list) and len(response["canvas"]) == 2 and
+                all(type(value) in (int, float) and 1 <= value <= 16384 and value == int(value)
+                    for value in response["canvas"]), "invalid canvas")
+        require(integers(response["clear"], 4, 0, 255), "invalid clear color")
+        require(isinstance(response["commands"], list) and len(response["commands"]) <= 16384 and
+                all(isinstance(command, dict) and command.get("type") in (
+                    "set_camera", "set_clip", "draw_sprite", "draw_rect", "draw_line", "draw_text"
+                ) for command in response["commands"]), "invalid command list or tag")
 
 
 def read_line(process, evidence):
@@ -39,169 +74,176 @@ def read_line(process, evidence):
     deadline = time.monotonic() + 15
     while len(line) <= MAX_RESPONSE_BYTES:
         remaining = deadline - time.monotonic()
-        if remaining <= 0 or not select.select([process.stdout], [], [], remaining)[0]:
-            raise RuntimeError("CLI did not flush a response within 15 seconds")
+        require(remaining > 0 and select.select([process.stdout], [], [], remaining)[0],
+                "CLI did not flush a response within 15 seconds")
         chunk = os.read(process.stdout.fileno(), min(65536, MAX_RESPONSE_BYTES + 1 - len(line)))
         evidence.write(chunk)
         evidence.flush()
-        if not chunk:
-            raise RuntimeError("CLI exited before a complete response")
+        require(chunk, "CLI exited before a complete response")
         line.extend(chunk)
-        if len(line) > MAX_RESPONSE_BYTES:
-            break
+        require(len(line) <= MAX_RESPONSE_BYTES, "CLI response exceeds 272 MiB")
         if line.endswith(b"\n"):
-            return bytes(line)
+            return json.loads(line)
     raise RuntimeError("CLI response exceeds 272 MiB")
 
 
-def session(directory, name, inputs, expected_error=None):
+def session(directory, name, inputs, options, expected_error=None):
     environment = os.environ.copy()
-    environment.pop("DISPLAY", None)
-    environment.pop("WAYLAND_DISPLAY", None)
+    for key in ("DISPLAY", "WAYLAND_DISPLAY"):
+        environment.pop(key, None)
     with (directory / f"{name}-input.jsonl").open("wb") as sent, \
          (directory / f"{name}-output.jsonl").open("wb") as received, \
          (directory / f"{name}-stderr.txt").open("wb") as errors:
-        process = subprocess.Popen([str(TARGET / "debug/cli")], cwd=ROOT,
-                                   env=environment, stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE, stderr=errors)
+        process = subprocess.Popen(options.cli, cwd=options.cwd, env=environment,
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
         try:
-            startup = read_line(process, received)
-            if json.loads(startup) != {"uploads": []}:
-                raise RuntimeError("unexpected initialization output")
+            validate(read_line(process, received))
             print(f"healthy: {name}, initialization received without a display")
+            require(not select.select([process.stdout], [], [], 0.02)[0],
+                    "CLI produced output or exited before input")
             for record in inputs:
                 sent.write(record)
                 sent.flush()
                 process.stdin.write(record)
                 process.stdin.flush()
                 if not expected_error:
-                    frame = read_line(process, received)
-                    if json.loads(frame) != FRAME:
-                        raise RuntimeError("unexpected frame output")
-            if not expected_error:
+                    if not record.endswith(b"\n"):
+                        process.stdin.close()
+                    validate(read_line(process, received), json.loads(record))
+            if not expected_error and not process.stdin.closed:
                 process.stdin.close()
-            status = process.wait(timeout=15)
-            (directory / f"{name}-status.txt").write_text(f"{status}\n")
-            remainder = process.stdout.read(1)
-            received.write(remainder)
-            if remainder:
-                raise RuntimeError("unexpected output after the last response")
-            if (status != 0) != bool(expected_error):
-                raise RuntimeError(f"unexpected exit status: {status}")
+            deadline = time.monotonic() + 15
+            extra = 0
+            while True:
+                remaining = deadline - time.monotonic()
+                require(remaining > 0 and select.select([process.stdout], [], [], remaining)[0],
+                        "CLI did not terminate within 15 seconds")
+                chunk = os.read(process.stdout.fileno(), 65536)
+                received.write(chunk)
+                received.flush()
+                extra += len(chunk)
+                require(extra <= MAX_RESPONSE_BYTES, "excess output after last response")
+                if not chunk:
+                    break
+            status = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+            require(extra == 0, "unexpected output after last response")
+            require(status == (1 if expected_error else 0), f"unexpected exit status: {status}")
         finally:
             if process.poll() is None:
                 process.kill()
-            process.wait(timeout=5)
+            status = process.wait(timeout=5)
+            (directory / f"{name}-status.txt").write_text(f"{status}\n")
             process.stdout.close()
             if not process.stdin.closed:
                 process.stdin.close()
     error_text = (directory / f"{name}-stderr.txt").read_text()
-    if expected_error:
-        if expected_error not in error_text:
-            raise RuntimeError(f"missing diagnostic: {expected_error}")
-    elif error_text:
-        raise RuntimeError(f"unexpected stderr: {error_text}")
+    require(expected_error in error_text if expected_error else not error_text,
+            f"unexpected diagnostic: {error_text}")
     with (directory / f"{name}-output.jsonl").open("rb") as output:
         return hashlib.file_digest(output, "sha256").digest()
 
 
-def input_frame(controller, secs=0, nanos=16666667):
-    return (json.dumps({"dt": {"secs": secs, "nanos": nanos},
-                        "controller": controller}, separators=(",", ":")) + "\n").encode()
+def encoded(value):
+    return (json.dumps(value, separators=(",", ":")) + "\n").encode()
 
 
-def drive_cli(directory):
-    inputs = [input_frame({})]
-    for button in BUTTONS:
-        for position, transitions in (("down", 1), ("down", 0), ("up", 1)):
-            inputs.append(input_frame({button: {"ended": position, "half_transitions": transitions}}))
-    inputs.extend([
-        input_frame({"action_left": {"ended": "up", "half_transitions": 8}}, secs=3, nanos=712345678),
-        input_frame({}, nanos=0),
-        input_frame({}, secs=18446744073709551615, nanos=999999999),
-    ])
-    first = session(directory, "controls", inputs)
-    replay = session(directory, "replay", inputs)
-    if first != replay:
-        raise RuntimeError("replay output differs")
-    session(directory, "invalid", [b"{}\n"], expected_error="missing field")
-    request = input_frame({}).rstrip(b"\n")
+def frame(controller=None, secs=0, nanos=16666667):
+    return {"dt": {"secs": secs, "nanos": nanos}, "controller": controller or {}}
+
+
+def requests():
+    for secs, nanos in ((0, 0), (0, 16666667), (18446744073709551615, 999999999)):
+        yield encoded(frame(secs=secs, nanos=nanos))
+    for name in BUTTONS:
+        for ended, transitions in (("down", 1), ("down", 0), ("up", 1), ("up", 2), ("down", 4294967295)):
+            yield encoded(frame({name: {"ended": ended, "half_transitions": transitions}}))
+    yield encoded(frame())
+    for rate, count in ((1, 0), (1, 1), (44100, 3), (192000, 16384), (48000, 4096), (48000, 4096)):
+        yield encoded({"audio": {"sample_rate": rate, "frames": count}})
+    yield encoded(frame(nanos=0))
+
+
+def protocol(directory, options):
+    for name, request, error in (
+        ("missing", {}, "missing field dt"),
+        ("null", frame() | {"controller": None}, "invalid type"),
+        ("unknown", frame() | {"unknown": 0}, "unknown field"),
+        ("button", frame({"start": {"ended": "pressed", "half_transitions": 1}}), "unknown variant"),
+        ("transitions", frame({"start": {"ended": "down", "half_transitions": 4294967296}}), "invalid value"),
+        ("duration", frame(nanos=1000000000), "dt.nanos must be less than 1000000000"),
+        ("rate-low", {"audio": {"sample_rate": 0, "frames": 0}}, "audio.sample_rate must be between"),
+        ("rate-high", {"audio": {"sample_rate": 192001, "frames": 0}}, "audio.sample_rate must be between"),
+        ("audio-size", {"audio": {"sample_rate": 48000, "frames": 16385}}, "audio.frames exceeds"),
+        ("mixed", frame() | {"audio": {"sample_rate": 1, "frames": 0}}, "audio cannot be combined"),
+    ):
+        session(directory, name, [encoded(request)], options, error)
+    request = encoded({"audio": {"sample_rate": 1, "frames": 0}}).rstrip(b"\n")
     at_limit = request + b" " * (16384 - len(request) - 1) + b"\n"
-    session(directory, "at-limit", [at_limit])
-    session(directory, "oversized", [at_limit[:-1] + b" \n"],
-            expected_error="input line exceeds 16384 bytes")
-    session(directory, "eof", [])
-    print(f"verified: {len(inputs)} controlled frames, identical replay, size boundary, EOF and fail-fast errors")
-
-
-def linux_drive(directory):
-    for command in ("xdotool", "import"):
-        if not shutil.which(command):
-            raise RuntimeError(f"missing required tool: {command}")
-    with (directory / "linux.log").open("wb") as log:
-        process = subprocess.Popen([str(TARGET / "debug/linux")], cwd=ROOT, stdout=log, stderr=log)
-        try:
-            window = None
-            for _ in range(200):
-                if process.poll() is not None:
-                    raise RuntimeError("Linux platform exited before becoming ready")
-                result = subprocess.run(["xdotool", "search", "--name", "^gamz$"],
-                                        capture_output=True, timeout=2)
-                if result.returncode == 0 and "commands=" in (directory / "linux.log").read_text():
-                    window = result.stdout.decode().splitlines()[0]
-                    break
-                time.sleep(0.1)
-            if window is None:
-                raise RuntimeError("Linux platform did not become ready")
-            if "wgpu adapter:" not in (directory / "linux.log").read_text():
-                raise RuntimeError("Linux platform did not report an adapter")
-            print(f"healthy: Linux window={window}, adapter and frames observed")
-            subprocess.run(["xdotool", "windowfocus", window], check=True, timeout=5)
-            subprocess.run(["import", "-window", window, str(directory / "linux-before.png")], check=True, timeout=5)
-            with (directory / "linux-actions.txt").open("w") as actions:
-                for key in ("w", "a", "s", "d", "Up", "Left", "Down", "Right", "q", "e", "space"):
-                    actions.write(f"{key}\n")
-                    actions.flush()
-                    subprocess.run(["xdotool", "key", "--window", window, key], check=True, timeout=5)
-                    time.sleep(0.15)
-                subprocess.run(["import", "-window", window, str(directory / "linux-after.png")], check=True, timeout=5)
-                actions.write("Escape\n")
-                actions.flush()
-                subprocess.run(["xdotool", "keydown", "--window", window, "Escape"], check=True, timeout=5)
-            status = process.wait(timeout=10)
-            (directory / "linux-status.txt").write_text(f"{status}\n")
-            if status != 0:
-                raise RuntimeError(f"unexpected Linux exit status: {status}")
-        finally:
-            if process.poll() is None:
-                process.kill()
-            process.wait(timeout=5)
-    print("verified: Linux keyboard path, presentation and Escape exit")
+    session(directory, "at-limit", [at_limit, request], options)
+    session(directory, "oversized", [at_limit[:-1] + b" \n"], options, "input line exceeds 16384 bytes")
+    session(directory, "no-newline", [at_limit[:-1] + b"  "], options, "input line exceeds 16384 bytes")
+    session(directory, "stop-on-error", [b"{}\n" + request + b"\n"], options, "missing field dt")
+    session(directory, "eof", [], options)
 
 
 def main():
-    command = sys.argv[1] if len(sys.argv) == 2 else ""
-    if command == "launch":
-        build("cli")
-        print(f"ready: {TARGET / 'debug/cli'}; each drive owns a fresh process")
-    elif command in ("doctor", "drive", "linux"):
-        directory = evidence_directory()
-        print(f"evidence: {directory}", flush=True)
-        if command == "doctor":
-            session(directory, "doctor", [])
-        elif command == "drive":
-            drive_cli(directory)
-        else:
-            build("linux")
-            subprocess.run(["xvfb-run", "-a", "-s", "-screen 0 1280x720x24",
-                            sys.executable, str(Path(__file__).resolve()), "_linux", str(directory)],
-                           check=True)
-    elif len(sys.argv) == 3 and sys.argv[1] == "_linux":
-        linux_drive(Path(sys.argv[2]))
-    elif command == "cleanup":
-        print("clean: every drive tears down its children; evidence is retained")
+    parser = argparse.ArgumentParser(description="Verify the production CLI contract; never launches a graphical host.")
+    parser.add_argument("command", choices=("launch", "doctor", "drive", "cleanup"))
+    parser.add_argument("--inputs", type=Path, help="valid JSONL requests instead of the protocol baseline")
+    parser.add_argument("--expected", type=Path, help="independently justified complete output JSONL, including startup")
+    parser.add_argument("--cwd", type=Path, default=ROOT, help="game asset root")
+    parser.add_argument("--persistent-bytes", type=int)
+    parser.add_argument("--transient-bytes", type=int)
+    options = parser.parse_args()
+    if (options.inputs or options.expected) and options.command != "drive":
+        parser.error("--inputs and --expected require drive")
+    if options.expected and not options.inputs:
+        parser.error("--expected requires --inputs")
+    if options.command == "launch":
+        subprocess.run(["cargo", "build", "--locked", "-p", "platform",
+                        "--features", "cli", "--bin", "cli", "--target-dir", str(TARGET)],
+                       cwd=ROOT, check=True, timeout=600)
+        print(f"ready: {BINARY}")
+        return
+    if options.command == "cleanup":
+        print("clean: each session reaps its process; evidence is retained")
+        return
+    options.cli = [str(BINARY)]
+    for flag, value in (("--persistent-bytes", options.persistent_bytes), ("--transient-bytes", options.transient_bytes)):
+        if value is not None:
+            options.cli.extend([flag, str(value)])
+    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix="run-", dir=ARTIFACTS))
+    print(f"evidence: {directory}", flush=True)
+    with BINARY.open("rb") as binary:
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    (directory / "run.json").write_text(json.dumps({"command": options.cli, "cwd": str(options.cwd.resolve()),
+                                                  "binary_sha256": digest}, indent=2) + "\n")
+    if options.command == "doctor":
+        session(directory, "doctor", [], options)
+        return
+    if options.inputs:
+        with options.inputs.open("rb") as inputs:
+            first = session(directory, "drive", inputs, options)
     else:
-        raise SystemExit("usage: verify-game {launch|doctor|drive|linux|cleanup}")
+        first = session(directory, "drive", requests(), options)
+    with (directory / "drive-input.jsonl").open("rb") as inputs:
+        replay = session(directory, "replay", inputs, options)
+    repeatability = "identical" if first == replay else "different; inspect external inputs and game behavior"
+    (directory / "replay.txt").write_text(repeatability + "\n")
+    print(f"replay: {repeatability}; not a gameplay oracle")
+    if options.expected:
+        expected_path = directory / "expected.jsonl"
+        shutil.copyfile(options.expected, expected_path)
+        for name in ("drive", "replay"):
+            with expected_path.open() as expected, (directory / f"{name}-output.jsonl").open() as actual:
+                for index, (left, right) in enumerate(zip_longest(expected, actual), 1):
+                    require(left is not None and right is not None and json.loads(left) == json.loads(right),
+                            f"{name}: expected output differs at record {index}")
+        print("verified: complete outputs match supplied expectations")
+    if not options.inputs:
+        protocol(directory, options)
+    print("verified: CLI transport and output envelopes; inspect captured commands for affected behavior")
 
 
 if __name__ == "__main__":

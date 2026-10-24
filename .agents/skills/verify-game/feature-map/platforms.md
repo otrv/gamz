@@ -1,0 +1,21 @@
+# Verify an affected platform
+
+Before launching a non-CLI host, name the changed host or renderer code and the platform property being tested. Game logic, game assets, and verification-skill maintenance do not justify a graphical run. Do not use visible gameplay as the correctness test for game rules.
+
+## Linux
+
+Build with `cargo build -p platform --features linux --bin linux --locked`. Use an X11 session, a usable GPU adapter, and an ALSA `default` device. A bounded private Xvfb session can test window presentation; clean up every process it starts.
+
+Exercise only affected properties: window creation and presentation, resize or minimize recovery, key mapping and focus-loss release, repeat suppression, Escape or window-close exit. A clear-only frame is valid. Inspect screenshots and logs for rendering changes, and record input interactions when relevant. Nonzero command counts and game-specific pixels are not host readiness requirements.
+
+For audio changes, use a real device or clocked virtual sink and compare captured samples from an exercised, independently known signal. An ALSA null device proves neither playback timing nor underrun recovery. For recovery, stop the process for one second, resume it, and require sound afterward. Test unavailable-device failure when affected. Do not change the game to emit a test signal without approval.
+
+Sources: `crates/platform/src/linux/{main,audio,services}.rs` and `crates/renderer/src/wgpu/`.
+
+## Web
+
+Run `cargo xtask web game` and serve `target/web/game` through the repository's portal workflow. Use a browser with WebGPU. Check affected loading or error states, Play activation, canvas focus, blur/hidden pause, Resume, resize, asset preloading, or audio scheduling. Inspect screenshots for pixels and recordings for interactions. A browser screenshot does not establish device playback.
+
+Sources: `crates/platform-web/src/{lib.rs,host.js}` and `crates/platform-web/index.html`.
+
+Keep complete platform diagnostics and relevant captures. Exercise texture, clipping, sampling, or audio paths only with suitable existing content or an explicitly authorized probe. Mark missing prerequisites and unexercised paths rather than launching unrelated hosts or claiming coverage from process survival.

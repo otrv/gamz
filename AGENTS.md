@@ -23,6 +23,7 @@ Keep each rule at the highest layer that can enforce it. The table identifies th
 | `crates/asset-packer/deny.toml` | No crate dependencies for `asset-packer`, including build, development, and target-specific dependencies. |
 | `crates/xtask/src/main.rs` | Deployment targets, `UNSAFE_CRATES`, exact tool pins, prerequisite installation, and locked checks. Checks cover formatting, dependency bans, compatible all-features builds, the renderer without a backend, every game selection with isolated and combined hosts, utility tests, and Miri. |
 | `.githooks/pre-commit` and `.github/workflows/ci.yml` | `cargo xtask check` before commits and in CI. |
+| `verify-game` helper | CLI-only build and execution. Engine-contract assertions accept game-independent outputs; game-specific workloads and expectations are caller-supplied files. |
 | `STYLE_GUIDE.md` | Code style and design rules that need judgment, including memory and architecture boundaries and handwritten lint suppressions that static checks miss. |
 | This file | Workflow, configuration correctness, approvals, and verification. |
 
@@ -58,5 +59,7 @@ For review requests, inspect the scope the user names. Otherwise review against 
 ## Verification
 
 Verify game-layer changes only through the production CLI, with controlled input and complete outputs. Run platform-specific verification only when that specific platform is altered. Game-layer changes alone never trigger graphical, keyboard, window, or device-playback checks. Apply the same boundary to performance measurements and verification-skill maintenance. Static checks still cover every configured target.
+
+Keep the verification skill and its feature map independent of the game implementation. Game-specific inputs and independently derived assertions belong to the current task, outside the reusable skill. The CLI helper has no graphical-host command. Before any separate platform run, name the affected host or renderer code and the platform property being verified. Skill maintenance alone never justifies that run. Source review enforces these scope decisions; protocol success and matching replay are not gameplay correctness.
 
 Follow the repository's `verify-game` skill for commands and evidence. Report unmeasured performance impact as a limitation.
