@@ -32,7 +32,6 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 run_step rustup toolchain install --no-self-update
-run_step cargo fetch --locked
-run_step ./scripts/setup
+run_step ./scripts/setup --warm
 
 git config core.hooksPath .githooks

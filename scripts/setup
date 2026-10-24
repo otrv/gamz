@@ -2,8 +2,11 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-if (( $# != 0 )); then
-    echo 'usage: ./scripts/setup' >&2
+warm=false
+if (( $# == 1 )) && [[ "$1" == --warm ]]; then
+    warm=true
+elif (( $# != 0 )); then
+    echo 'usage: ./scripts/setup [--warm]' >&2
     exit 2
 fi
 
@@ -90,3 +93,15 @@ rustup run "$miri_toolchain" cargo miri --version
 rustup component list --toolchain "$miri_toolchain" --installed | grep -Fx rust-src >/dev/null
 set +x
 echo '==> development tools ready'
+
+if "$warm"; then
+    set -x
+    cargo fetch --locked
+    cargo build -p platform --no-default-features --features cli --bin cli --locked
+    cargo build -p platform --no-default-features --features linux --bin linux --locked
+    cargo build -p asset-packer --locked
+    ./scripts/build-web --dev
+    .githooks/pre-commit --all
+    set +x
+    echo '==> build and check caches ready'
+fi
