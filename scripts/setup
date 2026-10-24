@@ -12,6 +12,7 @@ deny_sha256=9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
 shear_version=1.14.0
 shear_sha256=9004df4eb031a456026c4326ae0d0ce545321527a67be90f4524c1be729dc40e
 wasm_bindgen_version=0.2.129
+wasm_bindgen_sha256=82d12bb940e2d4e72e0d5605387fc1b8ca179044e012b620f0ce4e7440e8320e
 miri_toolchain=nightly-2026-10-01
 
 set -x
@@ -55,7 +56,23 @@ if ! installed=$(cargo shear --version 2>/dev/null) || [[ "$installed" != "Versi
 fi
 
 if ! installed=$(wasm-bindgen --version 2>/dev/null) || [[ "$installed" != "wasm-bindgen $wasm_bindgen_version" ]]; then
-    cargo install wasm-bindgen-cli --version "=$wasm_bindgen_version" --locked
+    if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
+        (
+            temporary=$(mktemp -d)
+            trap 'rm -rf "$temporary"' EXIT
+            release="wasm-bindgen-$wasm_bindgen_version-x86_64-unknown-linux-musl"
+            archive="$temporary/$release.tar.gz"
+            curl --proto '=https' --tlsv1.2 -fsSL \
+                "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/$wasm_bindgen_version/$release.tar.gz" -o "$archive"
+            printf '%s  %s\n' "$wasm_bindgen_sha256" "$archive" | sha256sum --check --strict -
+            tar -xzf "$archive" -C "$temporary" "$release/wasm-bindgen"
+            installed=$("$temporary/$release/wasm-bindgen" --version)
+            test "$installed" = "wasm-bindgen $wasm_bindgen_version"
+            install -Dm755 "$temporary/$release/wasm-bindgen" "${CARGO_HOME:-"$HOME/.cargo"}/bin/wasm-bindgen"
+        )
+    else
+        cargo install wasm-bindgen-cli --version "=$wasm_bindgen_version" --locked
+    fi
 fi
 
 if ! rustup run "$miri_toolchain" cargo miri --version 2>/dev/null ||
