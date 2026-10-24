@@ -13,19 +13,30 @@ Inherit the user's global `AGENTS.md` without copying it here.
 
 The compiler, Clippy, rustfmt, and cargo-deny own their configured checks. Prose covers decisions and gaps those tools cannot enforce. Implementers and reviewers use the same rules, not separate copies.
 
+## Policy changes require explicit approval
+
+Get the user's explicit approval for the exact rule and proposed relaxation before broadening any policy or weakening its enforcement. This includes architecture, safety, tests, dependencies, lint settings, checks, and agent instructions. Approval to implement a feature or refactor does not approve policy exceptions.
+
+When implementation conflicts with a policy, preserve the policy and explain the conflict. Propose a compliant design or ask for the specific exception before proceeding. Apply this gate to configuration and code as well as prose; moving or renaming a violation does not resolve it.
+
 ## Implement and finish
 
 1. Identify the concrete requirement before adding crates, dependencies, public APIs, scripts, checks, abstractions, protocols, tests, or documentation. Compare reuse or removal with the addition and account for maintenance cost. Use `/grill-me` for unresolved design decisions.
+   For cross-layer changes, agree on a short interface sketch in the conversation before implementation or delegation. Name each responsibility's owner and what remains deferred.
 2. Get approval before creating a crate, changing a crate's public interface, adding a workspace dependency, or adding an external crate dependency. Create approved crates with `cargo new crates/<name>`.
 3. Finish the implementation, integration, and cleanup. Resolve concrete correctness and design problems. Optional optimizations and hypothetical requirements are not technical debt.
 4. Verify the completed changes using the scope below, then run `.githooks/pre-commit`. Use `.githooks/pre-commit --all` for full validation. Install missing prerequisites with `./scripts/setup`. Never use `--no-verify`. If a diagnostic is wrong, stop and propose a central policy change instead of suppressing it or distorting clear code.
 5. Fix every substantiated finding. Resolve disputed findings with evidence and escalate unresolved policy decisions to the user. After fixes, repeat affected runtime verification and the hook. Finish only when the final tree has passing checks and no unresolved findings.
+
+Give parallel workers separate file ownership and targeted checks. The integrating agent runs the required hook after edits have settled, rather than each worker running it against concurrent changes.
 
 After the same correction class occurs twice, use `/correct`. Get approval before adding a prevention check.
 
 ## Verify behavior and evidence
 
 Use commands that propagate failures, including failures inside pipelines. Record decisive output and distinguish passed, failed, canceled, and unrun checks. Passing static checks does not prove runtime behavior.
+
+Before removing a temporary probe used as evidence, preserve its fixture, assertions, commands, complete output, and tested source identity together in review artifacts. Include uncommitted source changes in that identity. These artifacts are not permanent repository tests.
 
 Verify game behavior only through the production CLI, with controlled inputs and complete outputs. Follow `verify-game` for commands and evidence. Derive expected results independently and assert the changed behavior. Protocol success and matching replay alone do not establish gameplay correctness.
 
@@ -56,5 +67,6 @@ Review-only work is read-only. Oracle reports findings to the implementer rather
 
 | Rule | Enforcement |
 | --- | --- |
+| [Policy approval gate](#policy-changes-require-explicit-approval) | Agent must identify explicit user approval for the exact relaxation before editing. Existing compiler and hook checks remain enabled. Repository checks cannot determine whether a prose change weakens a policy or whether the user authorized it. |
 | [Oracle request gate](#review-independently) | Agent checks the user's request before invoking oracle. Repository checks cannot observe agent tool calls. |
 | [Prose guidance](#load-guidance-by-task) | Agent loads the skill and checks the final text. Repository checks cannot verify skill use or judge the intended audience. |
