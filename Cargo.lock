@@ -362,16 +362,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "examples"
-version = "0.1.0"
-dependencies = [
- "asset-packer",
- "game-core",
- "game-memory",
- "platform-api",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -449,14 +439,6 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "platform-api",
-]
-
-[[package]]
-name = "game-entry"
-version = "0.1.0"
-dependencies = [
- "examples",
- "game",
 ]
 
 [[package]]
@@ -1193,7 +1175,7 @@ name = "platform"
 version = "0.1.0"
 dependencies = [
  "alsa",
- "game-entry",
+ "game",
  "platform-api",
  "pollster",
  "renderer",
@@ -1211,7 +1193,7 @@ version = "0.1.0"
 name = "platform-web"
 version = "0.1.0"
 dependencies = [
- "game-entry",
+ "game",
  "js-sys",
  "platform-api",
  "renderer",
@@ -2232,13 +2214,6 @@ name = "xkeysym"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
-
-[[package]]
-name = "xtask"
-version = "0.1.0"
-dependencies = [
- "serde_json",
-]
 
 [[package]]
 name = "zerocopy"

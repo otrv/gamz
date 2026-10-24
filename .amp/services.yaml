@@ -1,6 +1,6 @@
 services:
   web:
-    command: cargo xtask web game && exec python3 -m http.server "$PORT" --bind 0.0.0.0 --directory target/web
+    command: ./scripts/build-web && exec python3 -m http.server "$PORT" --bind 0.0.0.0 --directory target/web
     health: /game/
     review: false
     portal:

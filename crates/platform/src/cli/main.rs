@@ -11,7 +11,7 @@ mod services;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::process::ExitCode;
 
-use game_entry::SelectedGame;
+use game::GameState;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
 use platform_api::memory::{PersistentMemory, TransientMemory};
@@ -27,7 +27,7 @@ const MAX_INPUT_BYTES: usize = 16 * 1024;
 const MAX_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
 
 fn main() -> ExitCode {
-    match run::<SelectedGame>() {
+    match run::<GameState>() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("gamz cli: {error}");

@@ -12,7 +12,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use game_entry::SelectedGame;
+use game::GameState;
 use platform_api::Game;
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
@@ -117,7 +117,7 @@ impl ApplicationHandler for Platform {
 }
 
 fn main() -> std::process::ExitCode {
-    match run::<SelectedGame>() {
+    match run::<GameState>() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("gamz: {error}");

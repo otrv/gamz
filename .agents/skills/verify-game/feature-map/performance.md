@@ -7,7 +7,7 @@ Choose a fixed JSONL workload that exercises the changed code, including audio r
 Build and validate the measured release executable separately:
 
 ```sh
-cargo build --release --locked -p platform \
+cargo build --release --locked -p platform --no-default-features \
 	--features cli --bin cli --target-dir target/measure-game
 target/measure-game/release/cli < target/requests.jsonl > target/output.jsonl
 ```

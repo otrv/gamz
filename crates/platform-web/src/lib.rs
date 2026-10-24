@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use game_entry::SelectedGame;
+use game::GameState;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, SampleRate, StereoFrame};
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
@@ -66,7 +66,7 @@ impl ApplicationHandler for Platform {
         };
         let controller = Rc::clone(&self.controller);
         spawn_local(async move {
-            if let Err(error) = Box::pin(run::<SelectedGame>(window, controller)).await {
+            if let Err(error) = Box::pin(run::<GameState>(window, controller)).await {
                 let message = error
                     .as_string()
                     .or_else(|| {

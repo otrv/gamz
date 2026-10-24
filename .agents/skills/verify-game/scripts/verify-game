@@ -200,7 +200,7 @@ def main():
     if options.expected and not options.inputs:
         parser.error("--expected requires --inputs")
     if options.command == "launch":
-        subprocess.run(["cargo", "build", "--locked", "-p", "platform",
+        subprocess.run(["cargo", "build", "--locked", "-p", "platform", "--no-default-features",
                         "--features", "cli", "--bin", "cli", "--target-dir", str(TARGET)],
                        cwd=ROOT, check=True, timeout=600)
         print(f"ready: {BINARY}")

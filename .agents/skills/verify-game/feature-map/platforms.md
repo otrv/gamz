@@ -4,7 +4,7 @@ Before launching a non-CLI host, name the changed host or renderer code and the 
 
 ## Linux
 
-Build with `cargo build -p platform --features linux --bin linux --locked`. Use an X11 session, a usable GPU adapter, and an ALSA `default` device. A bounded private Xvfb session can test window presentation; clean up every process it starts.
+Build with `cargo build -p platform --no-default-features --features linux --bin linux --locked`. Use an X11 session, a usable GPU adapter, and an ALSA `default` device. A bounded private Xvfb session can test window presentation; clean up every process it starts.
 
 Exercise only affected properties: window creation and presentation, resize or minimize recovery, key mapping and focus-loss release, repeat suppression, Escape or window-close exit. A clear-only frame is valid. Inspect screenshots and logs for rendering changes, and record input interactions when relevant. Nonzero command counts and game-specific pixels are not host readiness requirements.
 
@@ -14,7 +14,7 @@ Sources: `crates/platform/src/linux/{main,audio,services}.rs` and `crates/render
 
 ## Web
 
-Run `cargo xtask web game` and serve `target/web/game` through the repository's portal workflow. Use a browser with WebGPU. Check affected loading or error states, Play activation, canvas focus, blur/hidden pause, Resume, resize, asset preloading, or audio scheduling. Inspect screenshots for pixels and recordings for interactions. A browser screenshot does not establish device playback.
+Run `./scripts/build-web` and serve `target/web/game` through the repository's portal workflow. Use a browser with WebGPU. Check affected loading or error states, Play activation, canvas focus, blur/hidden pause, Resume, resize, asset preloading, or audio scheduling. Inspect screenshots for pixels and recordings for interactions. A browser screenshot does not establish device playback.
 
 Sources: `crates/platform-web/src/{lib.rs,host.js}` and `crates/platform-web/index.html`.
 

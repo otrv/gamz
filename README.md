@@ -1,7 +1,8 @@
 # gamz
 
-gamz is a Rust game engine boilerplate. Start your game here and change the
-engine to suit your project.
+gamz is a Rust game engine boilerplate with breakout as its only bundled game.
+Replace breakout in `crates/game` with your own game and adapt the engine to
+your project. All platforms link the same game library directly.
 
 ## Build and run
 
@@ -21,9 +22,11 @@ cargo run -p platform --features linux --bin linux --locked
 ```
 
 Run it in an X11 session with a supported GPU driver and an ALSA `default`
-playback device. The starter game opens a black canvas. Use `cargo build` in
-place of `cargo run` to build without launching, or add `--release` for an
-optimized build.
+playback device. Press Space to launch the ball and use A and D to move the
+paddle. After a win or loss, press Space to reset. Press Escape to exit.
+
+Use `cargo build` in place of `cargo run` to build without launching, or add
+`--release` for an optimized build.
 
 ## Build for the web
 
@@ -33,8 +36,8 @@ Localhost also works for development. It does not support WebGL or touch control
 Build your game from the repository root:
 
 ```sh
-cargo xtask setup
-cargo xtask web game
+./scripts/setup
+./scripts/build-web
 ```
 
 Publish the entire `target/web/game/` directory on a static web host. Keep the
@@ -54,9 +57,8 @@ To embed the build in another page, set the iframe URL to its published location
 ```
 
 Click **Play** to enable audio and keyboard input. Losing focus pauses the game
-and releases held keys. Click **Resume** to continue. The starter game displays
-a black canvas. To build an example, replace `game` with a selection from
-`crates/game-entry/Cargo.toml`, such as `example-breakout`.
+and releases held keys. Click **Resume** to continue. Use the same breakout
+controls as on Linux, except Escape does not close the browser page.
 
 For files loaded through `PlatformApi::load_entire_file`, copy them into the
 output directory and list their relative paths in `assets.json`, for example
@@ -70,15 +72,33 @@ per-file limit of 16 MiB plus 8 bytes. Use relative paths without empty componen
 
 ## Make your game
 
-Start in [crates/game/src/lib.rs](crates/game/src/lib.rs). `GameState` implements
-the [Game trait](crates/platform-api/src/lib.rs), with methods for initialization,
-frame updates, and audio output. Replace the starter behavior with your game's
-state and logic. `game-entry` selects the game linked into the executable.
+Replace breakout's state and logic in
+[crates/game/src/lib.rs](crates/game/src/lib.rs). Keep `GameState` as the library's
+entry type and implement the [Game trait](crates/platform-api/src/lib.rs) for
+initialization, frame updates, and audio output. Keep your game's assets and
+build script in `crates/game`. There is no game-selection flag or registry.
 
 For embedding assets, see the [asset-packer guide](crates/asset-packer/README.md).
 
 ## Check changes
 
-Install the development tools with `cargo xtask setup`, then run
-`cargo xtask check`. See [AGENTS.md](AGENTS.md) for project policies and
+Install the development tools with `./scripts/setup`. Run the pre-commit hook
+to check affected crates and their consumers:
+
+```sh
+.githooks/pre-commit
+```
+
+The hook reads staged, unstaged, and untracked changes. It skips Rust checks for
+README and documentation edits. Shared configuration, policy changes, and
+unknown paths trigger full checks. Cargo checks the working tree, not an isolated
+copy of the staged files.
+
+To run every check, use the same command as CI:
+
+```sh
+.githooks/pre-commit --all
+```
+
+See [AGENTS.md](AGENTS.md) for project policies and
 [verify-game](.agents/skills/verify-game/SKILL.md) for runtime verification.

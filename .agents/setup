@@ -33,6 +33,6 @@ fi
 
 run_step rustup toolchain install --no-self-update
 run_step cargo fetch --locked
-run_step cargo xtask setup
+run_step ./scripts/setup
 
 git config core.hooksPath .githooks

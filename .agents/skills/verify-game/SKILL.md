@@ -19,7 +19,7 @@ Run on Linux with Python 3.11 or newer and the pinned Rust toolchain:
 .agents/skills/verify-game/scripts/verify-game drive
 ```
 
-`launch` builds the CLI with locked dependencies and the default game into `target/verify-game`. `doctor` checks initialization and EOF. `drive` checks the [CLI contract](feature-map/cli.md), then reports fresh-process replay equality without assuming determinism.
+`launch` builds the CLI with locked dependencies and no default features into `target/verify-game`. `doctor` checks initialization and EOF. `drive` checks the [CLI contract](feature-map/cli.md), then reports fresh-process replay equality without assuming determinism.
 
 Each session starts a fresh process without display variables, checks flushed initialization before input, and sends requests serially. After any unexpected result, preserve evidence, fix the cause, rebuild if needed, and run doctor before another drive.
 
@@ -45,7 +45,7 @@ Every session reaps its process on success or failure. `cleanup` confirms this o
 
 ## Select other checks by the changed layer
 
-- Run `cargo xtask check` for the full static suite. Existing utility tests and Miri are separate from game verification.
+- Run `.githooks/pre-commit` for affected static checks, or `--all` for the full suite. Existing utility tests and Miri are separate from game verification.
 - Use [CLI performance measurements](feature-map/performance.md) only when performance is in scope.
 - Read [platform checks](feature-map/platforms.md) only to verify affected host or renderer functionality. Never launch a graphical host to test game rules or complete a maintenance checklist. Skill-only maintenance does not trigger platform runs.
 

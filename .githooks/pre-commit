@@ -2,4 +2,109 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
-exec cargo xtask check
+
+all=false
+cli=false
+linux=false
+web=false
+package_web=false
+core=false
+memory=false
+miri=false
+packer=false
+format=false
+
+case "$*" in
+    '') ;;
+    --all) all=true ;;
+    *) echo 'usage: .githooks/pre-commit [--all]' >&2; exit 2 ;;
+esac
+
+if ! "$all"; then
+    changed=$(mktemp)
+    trap 'rm -f "$changed"' EXIT
+    git diff --cached --name-only --no-renames -z > "$changed"
+    git diff --name-only --no-renames -z >> "$changed"
+    git ls-files --others --exclude-standard -z >> "$changed"
+    while IFS= read -r -d '' path; do
+        case "$path" in
+            Cargo.toml|Cargo.lock|*/Cargo.toml|rust-toolchain.toml|clippy.toml|deny.toml|*/deny.toml|AGENTS.md|*/AGENTS.md|STYLE_GUIDE.md|.cargo/*|.githooks/*|.github/*|.agents/setup|scripts/*)
+                all=true ;;
+            README.md|docs/*.md|crates/*/README.md|.agents/skills/*/*.md)
+                ;;
+            crates/game/*)
+                format=true; cli=true; linux=true; web=true ;;
+            crates/game-core/*)
+                format=true; cli=true; linux=true; web=true; core=true ;;
+            crates/game-memory/*)
+                format=true; cli=true; linux=true; web=true; memory=true; miri=true ;;
+            crates/platform-api/*)
+                format=true; cli=true; linux=true; web=true; core=true ;;
+            crates/renderer/*)
+                format=true; linux=true; web=true ;;
+            crates/platform/*)
+                format=true; cli=true; linux=true ;;
+            crates/platform-web/*)
+                format=true; web=true; package_web=true ;;
+            crates/asset-packer/*)
+                format=true; packer=true ;;
+            *) all=true ;;
+        esac
+    done < "$changed"
+fi
+
+native_target=x86_64-unknown-linux-gnu
+web_target=wasm32-unknown-unknown
+
+set -x
+if "$all" || "$format"; then
+    cargo fmt --all -- --check
+fi
+if "$all" || "$packer"; then
+    deny_version=$(cargo deny --version)
+    if [[ "$deny_version" != 'cargo-deny 0.20.2' ]]; then
+        echo 'cargo-deny 0.20.2 is required; run ./scripts/setup' >&2
+        exit 1
+    fi
+    if "$all"; then
+        cargo deny --workspace --locked check --deny warnings bans
+    fi
+    cargo deny --manifest-path crates/asset-packer/Cargo.toml --config crates/asset-packer/deny.toml --locked check --deny warnings bans
+fi
+if "$all"; then
+    cargo clippy --workspace --all-targets --all-features --locked --target "$native_target"
+elif "$cli" && "$linux"; then
+    cargo clippy -p platform --all-targets --all-features --locked --target "$native_target"
+fi
+if "$all" || "$cli"; then
+    cargo clippy -p platform --no-default-features --features cli --all-targets --locked --target "$native_target"
+fi
+if "$all" || "$linux"; then
+    cargo clippy -p platform --no-default-features --features linux --all-targets --locked --target "$native_target"
+fi
+if "$all" || "$web"; then
+    cargo clippy -p platform-web --lib --locked --target "$web_target"
+fi
+if "$all" || "$package_web"; then
+    ./scripts/build-web
+fi
+if ! "$all" && "$packer"; then
+    cargo clippy -p asset-packer --all-targets --all-features --locked --target "$native_target"
+fi
+if ! "$all" && "$core"; then
+    cargo clippy -p game-core --all-targets --all-features --locked --target "$native_target"
+fi
+if ! "$all" && "$memory"; then
+    cargo clippy -p game-memory --all-targets --all-features --locked --target "$native_target"
+fi
+if "$all" || "$core"; then
+    cargo test -p game-core --locked
+fi
+if "$all" || "$memory"; then
+    cargo test -p game-memory --locked
+fi
+if "$all" || "$miri"; then
+    rustup run nightly-2026-10-01 cargo miri test -p game-memory --all-features --locked
+fi
+set +x
+echo '==> all selected checks passed'

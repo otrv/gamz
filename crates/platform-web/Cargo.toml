@@ -7,13 +7,10 @@ publish.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = ["game-entry/default"]
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-game-entry = { path = "../game-entry", default-features = false }
+game = { path = "../game" }
 platform-api = { path = "../platform-api" }
-renderer = { path = "../renderer", default-features = false, features = ["wgpu"] }
+renderer = { path = "../renderer" }
 wasm-bindgen = { version = "=0.2.129", default-features = false, features = ["std"] }
 wasm-bindgen-futures = { version = "0.4.79", default-features = false, features = ["std"] }
 web-sys = { version = "0.3.106", default-features = false, features = ["HtmlCanvasElement"] }

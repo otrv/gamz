@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+if (( $# != 0 )); then
+    echo 'usage: ./scripts/setup' >&2
+    exit 2
+fi
+
+deny_version=0.20.2
+deny_sha256=9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f
+wasm_bindgen_version=0.2.129
+miri_toolchain=nightly-2026-10-01
+
+set -x
+rustup target add x86_64-unknown-linux-gnu wasm32-unknown-unknown
+
+if ! installed=$(cargo deny --version 2>/dev/null) || [[ "$installed" != "cargo-deny $deny_version" ]]; then
+    if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
+        temporary=$(mktemp -d)
+        trap 'rm -rf "$temporary"' EXIT
+        release="cargo-deny-$deny_version-x86_64-unknown-linux-musl"
+        archive="$temporary/$release.tar.gz"
+        curl --proto '=https' --tlsv1.2 -fsSL \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/$deny_version/$release.tar.gz" -o "$archive"
+        printf '%s  %s\n' "$deny_sha256" "$archive" | sha256sum --check --strict -
+        tar -xzf "$archive" -C "$temporary" "$release/cargo-deny"
+        installed=$("$temporary/$release/cargo-deny" --version)
+        test "$installed" = "cargo-deny $deny_version"
+        install -Dm755 "$temporary/$release/cargo-deny" "${CARGO_HOME:-"$HOME/.cargo"}/bin/cargo-deny"
+    else
+        cargo install cargo-deny --version "=$deny_version" --locked
+    fi
+fi
+
+if ! installed=$(wasm-bindgen --version 2>/dev/null) || [[ "$installed" != "wasm-bindgen $wasm_bindgen_version" ]]; then
+    cargo install wasm-bindgen-cli --version "=$wasm_bindgen_version" --locked
+fi
+
+if ! rustup run "$miri_toolchain" cargo miri --version 2>/dev/null ||
+    ! rustup component list --toolchain "$miri_toolchain" --installed | grep -Fx rust-src >/dev/null; then
+    rustup toolchain install "$miri_toolchain" --profile minimal --component miri,rust-src --no-self-update
+fi
+
+installed=$(cargo deny --version)
+test "$installed" = "cargo-deny $deny_version"
+installed=$(wasm-bindgen --version)
+test "$installed" = "wasm-bindgen $wasm_bindgen_version"
+rustup run "$miri_toolchain" cargo miri --version
+rustup component list --toolchain "$miri_toolchain" --installed | grep -Fx rust-src >/dev/null
+set +x
+echo '==> development tools ready'

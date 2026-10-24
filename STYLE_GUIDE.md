@@ -25,10 +25,10 @@ Keep dependencies directed from consumers to the mechanisms they use.
 
 `platform-api` contains shared contracts and their validation. It contains no
 game selection, game mechanisms, or backend implementations. Boundary signatures
-use its types and an opaque game-owned state root. Selection belongs in
-`game-entry`. Keep platform and third-party library types out of game-side
-interfaces, including nested types and errors. Keep target-specific code and
-libraries inside the platform module for that target.
+use its types and an opaque game-owned state root. Hosts link `game` directly.
+Keep platform and third-party library types out of game-side interfaces,
+including nested types and errors. Keep target-specific code and libraries
+inside the platform module for that target.
 
 The platform supplies bounded persistent and transient byte regions. Game-side
 code constructs arenas over them. Long-lived state stays in the persistent root.
@@ -36,10 +36,10 @@ Frame scratch resets together. Persistent game memory holds values, indices,
 handles, and offsets, never references or pointers. Its contents must remain
 valid when game code reloads.
 
-Game-side crates are `platform-api`, `game-core`, `game-memory`, `game`,
-`examples`, and `game-entry`. They use `#![no_std]`, never link `alloc` or `std`
-through `extern crate`, and have runtime dependencies that use neither. Check
-transitive dependencies and enabled features when versions or features change.
+Game-side crates are `platform-api`, `game-core`, `game-memory`, and `game`.
+They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have
+runtime dependencies that use neither. Check transitive dependencies and enabled
+features when versions or features change.
 Host-only build dependencies may use both. Host allocation does not authorize
 game-side heap allocation or per-frame allocation in hot paths.
 
@@ -48,17 +48,13 @@ game-independent semantics. Retain extracted mechanisms after their original
 games are removed. No callers in the current `game` crate alone is not grounds
 for removal.
 
-Use every added or expanded `game-core` capability in an example in the same
+Use every added or expanded `game-core` capability in `game` in the same
 change. Demonstrate it through normal execution, not unused imports, no-effect
-calls, or tests alone. Name the example, runtime path, and observed behavior that
-depends on the capability. The benchmark need not demonstrate every mechanism.
+calls, or tests alone. Name the runtime path and observed behavior that depends
+on the capability.
 
-Each example owns its logic, assets, and build code in one directory. Never reuse
-another example's code or assets through helpers, source inclusion, or filesystem
-paths. Engine utilities, `asset-packer`, and platforms may be shared. Register
-every example through `game-entry` and check it through every host. Do not expose
-sibling modules to bypass selection or introduce a game interface outside
-`platform-api::Game`.
+Keep game logic, assets, and build code in `crates/game`. Check the game through
+every host. Do not introduce a game interface outside `platform-api::Game`.
 
 ## Code organization and imports
 
@@ -293,10 +289,10 @@ a cross-boundary error type.
 
 ## Unsafe code
 
-Unsafe code, raw pointers, and ABI details belong only in `UNSAFE_CRATES` in
-`crates/xtask/src/main.rs`, currently `game-memory`. Never put them in game logic.
-Adding an unsafe crate needs approval as a central policy change. Otherwise use
-safe library APIs.
+Unsafe code, raw pointers, and ABI details belong only in `game-memory`.
+Never put them in game logic. Adding an unsafe crate needs approval as a central
+policy change and Miri coverage in `.githooks/pre-commit`. Otherwise use safe
+library APIs.
 
 Keep unsafe blocks narrow and behind safe interfaces. Each SAFETY contract must
 prove soundness for every input a safe caller can supply. Safe callers must not

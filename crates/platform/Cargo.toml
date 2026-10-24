@@ -6,9 +6,8 @@ publish.workspace = true
 autobins = false
 
 [features]
-default = ["game-entry/default"]
 cli = ["dep:rustix", "dep:serde", "dep:serde_json"]
-linux = ["dep:alsa", "dep:renderer", "renderer/wgpu", "dep:pollster", "dep:rustix", "dep:winit"]
+linux = ["dep:alsa", "dep:renderer", "dep:pollster", "dep:rustix", "dep:winit"]
 
 [[bin]]
 name = "linux"
@@ -21,14 +20,14 @@ path = "src/cli/main.rs"
 required-features = ["cli"]
 
 [dependencies]
-game-entry = { path = "../game-entry", default-features = false }
+game = { path = "../game" }
 platform-api = { path = "../platform-api" }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"], optional = true }
 serde_json = { version = "1.0", default-features = false, features = ["std"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 alsa = { version = "0.12.1", default-features = false, features = ["std"], optional = true }
-renderer = { path = "../renderer", default-features = false, optional = true }
+renderer = { path = "../renderer", optional = true }
 pollster = { version = "0.4.0", default-features = false, optional = true }
 rustix = { version = "1.1.5", default-features = false, features = ["std", "fs"], optional = true }
 winit = { version = "0.30.13", default-features = false, features = ["x11", "rwh_06"], optional = true }

@@ -15,14 +15,16 @@ Keep each rule at the highest layer that can enforce it. The table identifies th
 | `rust-toolchain.toml` | Exact Rust, rustfmt, and Clippy versions. |
 | Crate dependency graph | Layer direction. `game-core` cannot depend on `game` or the `platform` binary. |
 | `platform-api::Game` and generic host entrypoints | Initialization, frame updates, and audio updates through the shared game interface. |
-| `game-entry` features and the selected `examples` module | Exactly one game per build. Unselected example modules do not compile into the game. |
+| Direct host dependencies on `game` | One replaceable game library for every host. |
 | `Cargo.toml` workspace lints | Fatal diagnostics, restrictions on local lint overrides, unsafe-code isolation, Clippy `all` and `pedantic`, placeholder bans, SAFETY contracts, non-terminating loop signatures, explicit lifetimes, and reachable public items. |
 | `clippy.toml` | API-shape lints on public items. |
 | `Cargo.toml` release profile | Overflow checks in release builds. |
 | `deny.toml` | Allowed direct consumers of engine and game crates across the resolved all-features graph, including development and target-specific dependencies. |
 | `crates/asset-packer/deny.toml` | No crate dependencies for `asset-packer`, including build, development, and target-specific dependencies. |
-| `crates/xtask/src/main.rs` | Deployment targets, `UNSAFE_CRATES`, exact tool pins, prerequisite installation, and locked checks. Checks cover formatting, dependency bans, compatible all-features builds, the renderer without a backend, every game selection with isolated and combined hosts, utility tests, and Miri. |
-| `.githooks/pre-commit` and `.github/workflows/ci.yml` | `cargo xtask check` before commits and in CI. |
+| `scripts/setup` | Deployment targets, exact tool pins, and prerequisite installation. |
+| `scripts/build-web` | Web builds and packaging. |
+| `.githooks/pre-commit` | The check command list and affected-path routing. Full checks cover formatting, dependency bans, workspace all-features builds, isolated native hosts, web builds, utility tests, and Miri. |
+| `.github/workflows/ci.yml` | `.githooks/pre-commit --all` on every CI run. |
 | `verify-game` helper | CLI-only build and execution. Engine-contract assertions accept game-independent outputs; game-specific workloads and expectations are caller-supplied files. |
 | `STYLE_GUIDE.md` | Code style and design rules that need judgment, including memory and architecture boundaries and handwritten lint suppressions that static checks miss. |
 | This file | Workflow, configuration correctness, approvals, and verification. |
@@ -37,7 +39,9 @@ Keep `non_camel_case_types`, `non_upper_case_globals`, `unused_attributes`, and 
 
 An unsafe crate copies the workspace lint tables, changing only `unsafe_code` to `"allow"`. Update the copy whenever workspace lints change.
 
-Keep `xtask` a runner for standard tools. Do not add custom source checks, duplicate lint policy, or automate checks of repository configuration itself. Review configuration changes by tracing their enforcement path. Check lint inheritance, exact pins, deployment targets, unsafe-crate lint parity, and local and CI coverage. When upgrading Rust, compare the default-deny lint inventory with `rustc -W help`.
+Keep the hook a sequential runner for standard tools. Keep installation and web packaging in `scripts/setup` and `scripts/build-web`. Do not add custom source checks, duplicate lint policy, or automate checks of repository configuration itself. Review configuration changes by tracing their enforcement path. Check lint inheritance, exact pins, deployment targets, unsafe-crate lint parity, and local and CI coverage. Keep the hook's and web build's tool versions and targets aligned with setup. When upgrading Rust, compare the default-deny lint inventory with `rustc -W help`.
+
+Affected checks include consumers of changed crates. The hook reads staged, unstaged, and untracked paths, including deletions and both sides of renames. Known documentation paths skip Rust checks. Shared configuration, policy changes, and unknown paths run all checks. Review routing when dependencies change. CI always runs `--all`, independent of changed paths. Local checks validate the working tree, not an isolated staged snapshot.
 
 Enforcement configuration is trusted code. Checks prevent mistakes, not deliberate edits to the checks themselves. Hooks can be bypassed. Requiring successful CI before integration is a repository-permissions policy, not a local check. Passing checks do not prove runtime behavior.
 
@@ -45,20 +49,20 @@ Enforcement configuration is trusted code. Checks prevent mistakes, not delibera
 
 Resolve concrete correctness and design problems rather than knowingly commit them. Use `/grill-me` for unresolved design decisions. Optional optimizations and hypothetical requirements are not technical debt.
 
-- Run `cargo xtask check` after any change. Work is not done until it passes. Never use `--no-verify`. Install missing prerequisites with `cargo xtask setup`.
+- Run `.githooks/pre-commit` after any change. Work is not done until it passes. Run `.githooks/pre-commit --all` for full validation. Never use `--no-verify`. Install missing prerequisites with `./scripts/setup`.
 - Fix failed checks. If a diagnostic is wrong, stop and propose a central policy change. Do not suppress it locally or distort clear code to satisfy it.
 - Before adding crates, dependencies, public APIs, scripts, checks, abstractions, protocols, tests, or documentation, identify the concrete requirement. Compare removal or reuse with the proposed addition and account for its maintenance cost.
 - Get approval before creating a crate, changing a crate's public interface, adding a workspace dependency, or adding an external crate dependency.
 - Create crates with `cargo new crates/<name>`. Every crate inherits the workspace edition. Every crate except the designated unsafe crates and `platform-web` inherits the workspace lints.
 - After the same correction class occurs twice, use `/correct`. Get approval before building a new prevention check.
-- Upgrade toolchain pins together with diagnostic fixes or approved central lint changes. Run `cargo xtask setup` and `cargo xtask check`, then commit the upgrade together.
+- Upgrade toolchain pins together with diagnostic fixes or approved central lint changes. Run `./scripts/setup` and `.githooks/pre-commit --all`, then commit the upgrade together.
 - Enable the hook once per clone with `git config core.hooksPath .githooks`. `.agents/setup` does this in orbs.
 
 For review requests, inspect the scope the user names. Otherwise review against the merge base with `origin/main`, falling back to `main`, including uncommitted and untracked files. Read whole affected functions, types, and modules where bounds or ownership require context. Run the checks and report failures first without duplicating tool diagnostics. Review code and prose against `STYLE_GUIDE.md`. Report violations, unresolved concerns, and enforcement gaps with file locations, the applicable rule, and a concrete fix. Do not edit code during a review-only request.
 
 ## Verification
 
-Verify game-layer changes only through the production CLI, with controlled input and complete outputs. Run platform-specific verification only when that specific platform is altered. Game-layer changes alone never trigger graphical, keyboard, window, or device-playback checks. Apply the same boundary to performance measurements and verification-skill maintenance. Static checks still cover every configured target.
+Verify game-layer changes only through the production CLI, with controlled input and complete outputs. Run platform-specific verification only when that specific platform is altered. Game-layer changes alone never trigger graphical, keyboard, window, or device-playback checks. Apply the same boundary to performance measurements and verification-skill maintenance. Affected static checks cover changed crates and their consumers. Full CI checks cover every configured target.
 
 Keep the verification skill and its feature map independent of the game implementation. Game-specific inputs and independently derived assertions belong to the current task, outside the reusable skill. The CLI helper has no graphical-host command. Before any separate platform run, name the affected host or renderer code and the platform property being verified. Skill maintenance alone never justifies that run. Source review enforces these scope decisions; protocol success and matching replay are not gameplay correctness.
 
