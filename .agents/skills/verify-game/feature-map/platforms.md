@@ -1,6 +1,6 @@
 # Verify an affected platform
 
-Before launching a non-CLI host, name the changed host or renderer code and the platform property being tested. Game logic, game assets, and verification-skill maintenance do not justify a graphical run. Do not use visible gameplay as the correctness test for game rules.
+Select hosts using the [verification scope in AGENTS.md](../../../../AGENTS.md#verify-behavior-and-evidence), including consumers of a changed game-host API. Exercise the affected platform contract, not game-rule correctness through visible gameplay.
 
 ## Linux
 
