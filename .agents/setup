@@ -32,6 +32,6 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 run_step rustup toolchain install --no-self-update
-run_step ./scripts/setup --warm
+run_step ./scripts/setup
 
 git config core.hooksPath .githooks
