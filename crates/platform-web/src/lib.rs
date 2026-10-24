@@ -1,16 +1,18 @@
 #![cfg(target_arch = "wasm32")]
 
+mod services;
+
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use game::GameState;
+use platform::Host;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, SampleRate, StereoFrame};
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
-use platform_api::services::{FileError, MAX_FILE_BYTES, PlatformApi};
+use platform_api::services::{MAX_EVENTS, PlatformEvent};
 use platform_api::timing::DeltaTime;
 use renderer::wgpu::Renderer;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -24,6 +26,8 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
+use services::Services;
+
 const PERSISTENT_MEMORY_BYTES: usize = 64 * 1024;
 const TRANSIENT_MEMORY_BYTES: usize = 256 * 1024 * 1024;
 const AUDIO_FRAMES: usize = 4096;
@@ -32,14 +36,15 @@ const AUDIO_FRAMES: usize = 4096;
 extern "C" {
     fn prepare() -> js_sys::Promise;
     fn ready();
+    fn exited();
     fn fail(message: &str);
+    fn failed() -> bool;
     fn active() -> bool;
     fn next_frame() -> js_sys::Promise;
     fn sample_rate() -> u32;
     fn needs_audio() -> bool;
     #[wasm_bindgen(catch)]
     fn play_audio(left: &[f32], right: &[f32]) -> Result<(), JsValue>;
-    fn asset(path: &str) -> Option<js_sys::Uint8Array>;
 }
 
 struct Platform {
@@ -66,7 +71,7 @@ impl ApplicationHandler for Platform {
         };
         let controller = Rc::clone(&self.controller);
         spawn_local(async move {
-            if let Err(error) = Box::pin(run::<GameState>(window, controller)).await {
+            if let Err(error) = Box::pin(run(window, controller)).await {
                 let message = error
                     .as_string()
                     .or_else(|| {
@@ -120,10 +125,7 @@ fn js_error(error: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&error.to_string())
 }
 
-async fn run<G: Game>(
-    window: Arc<Window>,
-    controller: Rc<RefCell<ControllerInput>>,
-) -> Result<(), JsValue> {
+async fn run(window: Arc<Window>, controller: Rc<RefCell<ControllerInput>>) -> Result<(), JsValue> {
     JsFuture::from(prepare()).await?;
     let mut persistent = Vec::<u8>::new();
     persistent
@@ -138,48 +140,59 @@ async fn run<G: Game>(
     let mut renderer = Renderer::new(Arc::clone(&window), size.width, size.height)
         .await
         .map_err(js_error)?;
-    let state = {
-        let (state, uploads) = G::initialize(
-            PersistentMemory {
-                bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
-            },
-            TransientMemory { bytes: transient },
-            &PlatformApi { load_entire_file },
-        )
-        .map_err(js_error)?;
-        for &upload in uploads.as_ref() {
-            renderer.upload_texture(upload).map_err(js_error)?;
-        }
-        state
-    };
+    let mut services = Services::new();
+    let mut platform = Host::new(&mut services);
+    let state = game::GameState::initialize(
+        PersistentMemory {
+            bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
+        },
+        &mut platform,
+    )
+    .map_err(js_error)?;
     let mut samples = [StereoFrame::default(); AUDIO_FRAMES];
     let mut left = [0.0; AUDIO_FRAMES];
     let mut right = [0.0; AUDIO_FRAMES];
     let mut previous = None;
-    let mut input = FrameInput {
-        dt: DeltaTime::from_elapsed(Duration::ZERO),
-        controller: ControllerInput::default(),
-    };
+    let mut dt = DeltaTime::from_elapsed(Duration::ZERO);
+    let mut input = ControllerInput::default();
+    let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
     ready();
-    loop {
-        let frame = state.update(TransientMemory { bytes: transient }, &input);
-        let mut redraw = renderer.draw(&frame).map_err(js_error)?.is_none();
-        if active() && needs_audio() {
-            let rate = SampleRate::from_hz(sample_rate())
-                .ok_or_else(|| js_error("unsupported audio sample rate"))?;
-            state.update_audio(AudioBuffer::new(rate, &mut samples));
-            let channels = samples.iter().zip(&mut left).zip(&mut right);
-            for ((sample, left), right) in channels {
-                *left = f32::from(sample.left) / 32768.0;
-                *right = f32::from(sample.right) / 32768.0;
+    while !platform.backend().exiting() {
+        let count = platform.poll_events(&mut events);
+        let window_state = Services::window_state();
+        let frame_input = FrameInput::new(dt, input, window_state, &events[..count]);
+        let output = state.update(
+            &mut platform,
+            TransientMemory { bytes: transient },
+            &frame_input,
+        );
+        if platform.backend().exiting() {
+            break;
+        }
+        while !renderer
+            .upload_textures(output.uploads())
+            .map_err(js_error)?
+        {
+            JsFuture::from(next_frame()).await?;
+            if failed() {
+                return Ok(());
             }
-            play_audio(&left, &right)?;
+        }
+        let mut redraw = renderer.draw(&output.frame).map_err(js_error)?.is_none();
+        if active() && needs_audio() {
+            update_audio(state, &mut platform, &mut samples, &mut left, &mut right)?;
+            if platform.backend().exiting() {
+                break;
+            }
         }
         loop {
             let timestamp = JsFuture::from(next_frame())
                 .await?
                 .as_f64()
                 .ok_or_else(|| js_error("invalid animation timestamp"))?;
+            if failed() {
+                return Ok(());
+            }
             let current = window.inner_size();
             if current != size {
                 size = current;
@@ -187,46 +200,50 @@ async fn run<G: Game>(
                 redraw = true;
             }
             if redraw {
-                redraw = renderer.draw(&frame).map_err(js_error)?.is_none();
+                redraw = renderer.draw(&output.frame).map_err(js_error)?.is_none();
             }
-            if !active() {
+            let running = active();
+            if !running {
                 previous = None;
-                let mut controller = controller.borrow_mut();
-                controller.release_all();
-                controller.start_frame();
-                continue;
+                controller.borrow_mut().release_all();
+                if !platform.backend().has_events() {
+                    continue;
+                }
             }
             let elapsed = previous.map_or(0.0, |last| (timestamp - last) / 1000.0_f64);
-            previous = Some(timestamp);
+            previous = running.then_some(timestamp);
             let mut controller = controller.borrow_mut();
-            input = FrameInput {
-                dt: DeltaTime::from_elapsed(
-                    Duration::try_from_secs_f64(elapsed.clamp(0.0, 0.05)).map_err(js_error)?,
-                ),
-                controller: *controller,
-            };
+            dt = DeltaTime::from_elapsed(
+                Duration::try_from_secs_f64(elapsed.clamp(0.0, 0.05)).map_err(js_error)?,
+            );
+            input = *controller;
             controller.start_frame();
             break;
         }
     }
+    exited();
+    Ok(())
 }
 
-fn load_entire_file(path: &str, destination: &mut [u8]) -> Result<usize, FileError> {
-    if path.is_empty()
-        || path
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
-        || path.contains(['\\', ':', '\0'])
-    {
-        return Err(FileError::InvalidPath);
+fn update_audio(
+    state: &mut impl Game,
+    platform: &mut Host<'_, Services>,
+    samples: &mut [StereoFrame],
+    left: &mut [f32],
+    right: &mut [f32],
+) -> Result<(), JsValue> {
+    let rate = SampleRate::from_hz(sample_rate())
+        .ok_or_else(|| js_error("unsupported audio sample rate"))?;
+    state.update_audio(platform, AudioBuffer::new(rate, samples));
+    if platform.backend().exiting() {
+        return Ok(());
     }
-    let bytes = asset(path).ok_or(FileError::NotFound)?;
-    let length = usize::try_from(bytes.length()).unwrap();
-    if length > MAX_FILE_BYTES || length > destination.len() {
-        return Err(FileError::TooLarge);
+    let channels = samples.iter().zip(&mut *left).zip(&mut *right);
+    for ((sample, left), right) in channels {
+        *left = f32::from(sample.left) / 32768.0;
+        *right = f32::from(sample.right) / 32768.0;
     }
-    bytes.copy_to(&mut destination[..length]);
-    Ok(length)
+    play_audio(left, right)
 }
 
 fn controller_button(controller: &mut ControllerInput, key: KeyCode) -> Option<&mut ButtonState> {

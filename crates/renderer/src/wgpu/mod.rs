@@ -62,6 +62,9 @@ pub struct Renderer {
     geometry: Geometry,
     failure: Failure,
     pending: [Option<wgpu::SubmissionIndex>; FRAMES_IN_FLIGHT],
+    upload_pending: Option<wgpu::SubmissionIndex>,
+    #[cfg(target_arch = "wasm32")]
+    upload_completed: Arc<AtomicBool>,
     #[cfg(target_arch = "wasm32")]
     completed: [Arc<AtomicBool>; FRAMES_IN_FLIGHT],
     next_submission: usize,
@@ -150,6 +153,9 @@ impl Renderer {
             geometry: Geometry::new()?,
             failure,
             pending: std::array::from_fn(|_| None),
+            upload_pending: None,
+            #[cfg(target_arch = "wasm32")]
+            upload_completed: Arc::new(AtomicBool::new(true)),
             #[cfg(target_arch = "wasm32")]
             completed: std::array::from_fn(|_| Arc::new(AtomicBool::new(true))),
             next_submission: 0,
@@ -174,11 +180,51 @@ impl Renderer {
         self.failure.check()
     }
 
-    pub fn upload_texture(&mut self, upload: TextureUpload<'_>) -> Result<(), RendererError> {
-        self.failure.wait(&self.device, None)?;
+    pub fn upload_textures(
+        &mut self,
+        uploads: &[TextureUpload<'_>],
+    ) -> Result<bool, RendererError> {
+        self.failure.check()?;
+        if uploads.is_empty() {
+            return Ok(true);
+        }
+        #[cfg(target_arch = "wasm32")]
+        if !self.upload_completed.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+        if let Some(submission) = self.upload_pending.take() {
+            self.failure.wait(&self.device, Some(submission))?;
+        }
+        assert!(uploads.len() <= MAX_TEXTURES);
+        assert!(
+            uploads
+                .iter()
+                .map(|upload| upload.image.rgba().len())
+                .sum::<usize>()
+                <= MAX_TEXTURE_BYTES
+        );
+        for &upload in uploads {
+            self.upload_texture(upload)?;
+        }
+        self.upload_pending = Some(self.queue.submit([]));
+        #[cfg(target_arch = "wasm32")]
+        {
+            let completed = Arc::clone(&self.upload_completed);
+            completed.store(false, Ordering::Release);
+            self.queue
+                .on_submitted_work_done(move || completed.store(true, Ordering::Release));
+        }
+        self.failure.check()?;
+        Ok(true)
+    }
+
+    fn upload_texture(&mut self, upload: TextureUpload<'_>) -> Result<(), RendererError> {
+        self.failure.check()?;
         let slot = upload.id.index();
-        assert!(self.textures[slot].is_none(), "texture already uploaded");
-        let total = self.texture_bytes + upload.image.rgba().len();
+        let previous_bytes = self.textures[slot].as_ref().map_or(0, |texture| {
+            usize::from(texture.width) * usize::from(texture.height) * 4
+        });
+        let total = self.texture_bytes - previous_bytes + upload.image.rgba().len();
         if total > MAX_TEXTURE_BYTES {
             return Err(error("texture budget exhausted"));
         }
@@ -191,8 +237,6 @@ impl Renderer {
             &self.failure,
         )?;
         self.failure.check()?;
-        self.queue.submit([]);
-        self.failure.wait(&self.device, None)?;
         self.textures[slot] = Some(texture);
         self.texture_bytes = total;
         Ok(())

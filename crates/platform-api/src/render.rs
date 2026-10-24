@@ -379,6 +379,29 @@ impl<'a> Frame<'a> {
     }
 }
 
+pub struct FrameOutput<'a> {
+    pub frame: Frame<'a>,
+    uploads: &'a [TextureUpload<'a>],
+}
+
+impl<'a> FrameOutput<'a> {
+    #[must_use]
+    pub fn new(frame: Frame<'a>, uploads: &'a [TextureUpload<'a>]) -> Self {
+        assert!(uploads.len() <= MAX_TEXTURES);
+        let mut bytes = 0;
+        for upload in uploads {
+            bytes += upload.image.rgba().len();
+            assert!(bytes <= MAX_TEXTURE_BYTES);
+        }
+        Self { frame, uploads }
+    }
+
+    #[must_use]
+    pub fn uploads(&self) -> &'a [TextureUpload<'a>] {
+        self.uploads
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidImage;
 

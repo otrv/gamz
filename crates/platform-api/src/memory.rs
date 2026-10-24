@@ -7,3 +7,9 @@ pub struct PersistentMemory<'a> {
 pub struct TransientMemory<'a> {
     pub bytes: &'a mut [MaybeUninit<u8>],
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MemoryRange {
+    pub offset: usize,
+    pub len: usize,
+}

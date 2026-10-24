@@ -2,9 +2,12 @@ use std::ops::Range;
 
 use alsa::pcm::{Access, Format, Frames, HwParams, PCM, State};
 use alsa::{Direction, ValueOr};
+use platform::Host;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, SampleRate, StereoFrame};
 use rustix::io::Errno;
+
+use super::services::Services;
 
 const BYTES_PER_FRAME: usize = 4;
 const TARGET_QUEUE_MILLISECONDS: u32 = 50;
@@ -19,7 +22,10 @@ pub(super) struct Audio {
 }
 
 impl Audio {
-    pub(super) fn start(state: &mut impl Game) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(super) fn start(
+        state: &mut impl Game,
+        platform: &mut Host<'_, Services>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let pcm = PCM::open(c"default", Direction::Playback, true)?;
         let (sample_rate, target, device_frames) = {
             let parameters = HwParams::any(&pcm)?;
@@ -64,22 +70,30 @@ impl Audio {
             encoded,
             pending: 0..0,
         };
-        audio.update(state)?;
+        audio.update(state, platform)?;
         Ok(audio)
     }
 
-    pub(super) fn update(&mut self, state: &mut impl Game) -> alsa::Result<()> {
-        match self.fill(state) {
+    pub(super) fn update(
+        &mut self,
+        state: &mut impl Game,
+        platform: &mut Host<'_, Services>,
+    ) -> alsa::Result<()> {
+        match self.fill(state, platform) {
             Err(error) if error.errno() == Errno::PIPE.raw_os_error() => {
                 self.pcm.prepare()?;
                 self.pending = 0..0;
-                self.fill(state)
+                self.fill(state, platform)
             }
             result => result,
         }
     }
 
-    fn fill(&mut self, state: &mut impl Game) -> alsa::Result<()> {
+    fn fill(
+        &mut self,
+        state: &mut impl Game,
+        platform: &mut Host<'_, Services>,
+    ) -> alsa::Result<()> {
         if !self.pending.is_empty() {
             self.write_pending()?;
             if !self.pending.is_empty() {
@@ -100,7 +114,10 @@ impl Audio {
             return Ok(());
         }
         let frames = &mut self.frames[..requested];
-        state.update_audio(AudioBuffer::new(self.sample_rate, frames));
+        state.update_audio(platform, AudioBuffer::new(self.sample_rate, frames));
+        if platform.backend().exit_requested() {
+            return Ok(());
+        }
         let encoded_frames = frames
             .iter()
             .zip(self.encoded.as_chunks_mut::<BYTES_PER_FRAME>().0);

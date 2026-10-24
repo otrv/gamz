@@ -1,9 +1,34 @@
+use crate::services::{PlatformEvent, WindowState};
 use crate::timing::DeltaTime;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FrameInput {
+#[derive(Clone, Copy)]
+pub struct FrameInput<'a> {
     pub dt: DeltaTime,
     pub controller: ControllerInput,
+    pub window: WindowState,
+    events: &'a [PlatformEvent],
+}
+
+impl<'a> FrameInput<'a> {
+    #[must_use]
+    pub fn new(
+        dt: DeltaTime,
+        controller: ControllerInput,
+        window: WindowState,
+        events: &'a [PlatformEvent],
+    ) -> Self {
+        Self {
+            dt,
+            controller,
+            window,
+            events,
+        }
+    }
+
+    #[must_use]
+    pub fn events(&self) -> &[PlatformEvent] {
+        self.events
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

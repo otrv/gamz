@@ -1,7 +1,8 @@
 use platform_api::audio::{SampleRate, StereoFrame};
+use platform_api::render;
 use platform_api::render::{
-    Color, Frame, GlyphQuad, MAX_TEXTURE_BYTES, MAX_TEXTURES, PixelRect, Rect, RectStyle,
-    RenderCommand, Sampling, TextureUpload, Transform,
+    Color, GlyphQuad, MAX_TEXTURE_BYTES, MAX_TEXTURES, PixelRect, Rect, RectStyle, RenderCommand,
+    Sampling, TextureUpload, Transform,
 };
 use serde::{Serialize, Serializer};
 
@@ -41,6 +42,12 @@ pub(super) struct Startup<'a> {
 
 pub(super) struct Uploads<'a>(pub(super) &'a [TextureUpload<'a>]);
 
+impl Uploads<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
 impl Serialize for Uploads<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
@@ -72,7 +79,7 @@ impl Serialize for Uploads<'_> {
     }
 }
 
-pub(super) struct FrameOutput<'a>(pub(super) &'a Frame<'a>);
+pub(super) struct FrameOutput<'a>(pub(super) &'a render::FrameOutput<'a>);
 
 impl Serialize for FrameOutput<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -81,12 +88,15 @@ impl Serialize for FrameOutput<'_> {
             canvas: [f32; 2],
             clear: [u8; 4],
             commands: Commands<'a>,
+            #[serde(skip_serializing_if = "Uploads::is_empty")]
+            uploads: Uploads<'a>,
         }
 
         Fields {
-            canvas: [self.0.canvas.width(), self.0.canvas.height()],
-            clear: color(self.0.clear),
-            commands: Commands(self.0.commands()),
+            canvas: [self.0.frame.canvas.width(), self.0.frame.canvas.height()],
+            clear: color(self.0.frame.clear),
+            commands: Commands(self.0.frame.commands()),
+            uploads: Uploads(self.0.uploads()),
         }
         .serialize(serializer)
     }

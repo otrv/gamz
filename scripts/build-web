@@ -23,8 +23,5 @@ mkdir -p target/web/game
 wasm-bindgen "target/wasm32-unknown-unknown/$directory/platform_web.wasm" \
     --target web --out-dir target/web/game --out-name game --no-typescript
 cp crates/platform-web/index.html target/web/game/index.html
-if [[ ! -e target/web/game/assets.json ]]; then
-    printf '[]\n' > target/web/game/assets.json
-fi
 set +x
 echo '==> web build: target/web/game/index.html'

@@ -36,20 +36,7 @@ def integers(values, count, low, high):
 def validate(response, request=None):
     require(isinstance(response, dict), "response must be an object")
     if request is None:
-        require(set(response) == {"uploads"} and isinstance(response["uploads"], list),
-                "expected startup uploads")
-        require(len(response["uploads"]) <= 64, "too many uploads")
-        total = 0
-        for upload in response["uploads"]:
-            require(set(upload) == {"id", "image"} and integers([upload["id"]], 1, 0, 63),
-                    "invalid upload slot")
-            image = upload["image"]
-            require(set(image) == {"width", "height", "rgba"} and
-                    integers([image["width"], image["height"]], 2, 1, 2048), "invalid image size")
-            size = image["width"] * image["height"] * 4
-            require(integers(image["rgba"], size, 0, 255), "invalid RGBA payload")
-            total += size
-        require(total <= 64 * 1024 * 1024, "texture budget exceeded")
+        require(response == {"uploads": []}, "expected empty startup uploads")
     elif "audio" in request:
         audio = request["audio"]
         require(set(response) == {"sample_rate", "frames"} and
@@ -58,7 +45,9 @@ def validate(response, request=None):
                 all(integers(frame, 2, -32768, 32767) for frame in response["frames"]),
                 "incorrect audio rate, stereo count, or i16 samples")
     else:
-        require(set(response) == {"canvas", "clear", "commands"}, "expected frame envelope")
+        require(set(response) in ({"canvas", "clear", "commands"},
+                                  {"canvas", "clear", "commands", "uploads"}), "expected frame envelope")
+        validate_uploads(response.get("uploads", []))
         require(isinstance(response["canvas"], list) and len(response["canvas"]) == 2 and
                 all(type(value) in (int, float) and 1 <= value <= 16384 and value == int(value)
                     for value in response["canvas"]), "invalid canvas")
@@ -67,6 +56,21 @@ def validate(response, request=None):
                 all(isinstance(command, dict) and command.get("type") in (
                     "set_camera", "set_clip", "draw_sprite", "draw_rect", "draw_line", "draw_text"
                 ) for command in response["commands"]), "invalid command list or tag")
+
+
+def validate_uploads(uploads):
+    require(isinstance(uploads, list) and len(uploads) <= 64, "invalid upload list")
+    total = 0
+    for upload in uploads:
+        require(isinstance(upload, dict) and set(upload) == {"id", "image"} and
+                integers([upload["id"]], 1, 0, 63), "invalid upload slot")
+        image = upload["image"]
+        require(isinstance(image, dict) and set(image) == {"width", "height", "rgba"} and
+                integers([image["width"], image["height"]], 2, 1, 2048), "invalid image size")
+        size = image["width"] * image["height"] * 4
+        require(integers(image["rgba"], size, 0, 255), "invalid RGBA payload")
+        total += size
+    require(total <= 64 * 1024 * 1024, "texture budget exceeded")
 
 
 def read_line(process, evidence):

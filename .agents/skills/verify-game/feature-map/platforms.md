@@ -6,16 +6,18 @@ Select hosts using the [verification scope in AGENTS.md](../../../../AGENTS.md#v
 
 Build with `cargo build -p platform-linux --no-default-features --features linux --bin linux --locked`. Use an X11 session, a usable GPU adapter, and an ALSA `default` device. A bounded private Xvfb session can test window presentation; clean up every process it starts.
 
-Exercise only affected properties: window creation and presentation, resize or minimize recovery, key mapping and focus-loss release, repeat suppression, Escape or window-close exit. A clear-only frame is valid. Inspect screenshots and logs for rendering changes, and record input interactions when relevant. Nonzero command counts and game-specific pixels are not host readiness requirements.
+Exercise only affected properties: window creation and presentation, resize or minimize recovery, key mapping and focus-loss release, repeat suppression, or close-event delivery. Escape and window-close requests deliver `PlatformEvent::CloseRequested` to the game, which chooses whether to call `Platform::request_exit`. A destroyed window forces host exit. A clear-only frame is valid. Inspect screenshots and logs for rendering changes, and record input interactions when relevant. Nonzero command counts and game-specific pixels are not host readiness requirements.
 
 For audio changes, use a real device or clocked virtual sink and compare captured samples from an exercised, independently known signal. An ALSA null device proves neither playback timing nor underrun recovery. For recovery, stop the process for one second, resume it, and require sound afterward. Test unavailable-device failure when affected. Do not change the game to emit a test signal without approval.
 
-Sources: `crates/platform-linux/src/linux/{main,audio,services}.rs` and `crates/renderer/src/wgpu/`.
+Sources: `crates/platform-linux/src/linux/{main,audio,services}.rs`, `crates/platform/src/host.rs`, and `crates/renderer/src/wgpu/`.
 
 ## Web
 
-Run `./scripts/build-web` and serve `target/web/game` through the repository's portal workflow. Use a browser with WebGPU. Check affected loading or error states, Play activation, canvas focus, blur/hidden pause, Resume, resize, asset preloading, or audio scheduling. Inspect screenshots for pixels and recordings for interactions. A browser screenshot does not establish device playback.
+Run `./scripts/build-web` and serve `target/web/game` through the repository's portal workflow. Use a browser with WebGPU. Check affected loading or error states, Play activation, canvas focus, blur/hidden pause, Resume, resize, asynchronous file access, or audio scheduling. Inspect screenshots for pixels and recordings for interactions. A browser screenshot does not establish device playback.
 
-Sources: `crates/platform-web/src/{lib.rs,host.js}` and `crates/platform-web/index.html`.
+For file-service changes, exercise reads from IndexedDB and the fetch fallback for paths absent from IndexedDB. Writes persist in IndexedDB. Serve any task assets at their requested paths relative to the document URL; the web build does not preload an asset manifest. Check completion results and persisted bytes with an exercised path rather than treating page readiness as evidence of file access.
+
+Sources: `crates/platform-web/src/{lib.rs,services.rs,host.js}`, `crates/platform/src/host.rs`, `crates/platform-web/index.html`, and `scripts/build-web`.
 
 Keep complete platform diagnostics and relevant captures. Exercise texture, clipping, sampling, or audio paths only with suitable existing content or an explicitly authorized probe. Mark missing prerequisites and unexercised paths rather than launching unrelated hosts or claiming coverage from process survival.

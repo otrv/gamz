@@ -11,23 +11,24 @@ mod services;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::process::ExitCode;
 
-use game::GameState;
+use platform::Host;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
+use platform_api::input::FrameInput;
 use platform_api::memory::{PersistentMemory, TransientMemory};
-use platform_api::services::PlatformApi;
+use platform_api::services::{MAX_EVENTS, MAX_REQUESTS, PlatformEvent, WindowChange, WindowStatus};
 use serde::Serialize;
 
 use input::Input;
 use memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
 use output::{AudioOutput, FrameOutput, Startup, Uploads};
-use services::load_entire_file;
+use services::Services;
 
 const MAX_INPUT_BYTES: usize = 16 * 1024;
 const MAX_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
 
 fn main() -> ExitCode {
-    match run::<GameState>() {
+    match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("gamz cli: {error}");
@@ -36,7 +37,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run<G: Game>() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut persistent_bytes = PERSISTENT_MEMORY_BYTES;
     let mut transient_bytes = TRANSIENT_MEMORY_BYTES;
     let mut args = std::env::args_os().skip(1);
@@ -64,28 +65,25 @@ fn run<G: Game>() -> Result<(), Box<dyn std::error::Error>> {
     audio.try_reserve_exact(MAX_AUDIO_FRAMES)?;
     audio.resize(MAX_AUDIO_FRAMES, StereoFrame::default());
     let mut output = BufWriter::new(io::stdout().lock());
-    let state = {
-        let (state, uploads) = G::initialize(
-            PersistentMemory {
-                bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
-            },
-            TransientMemory {
-                bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
-            },
-            &PlatformApi { load_entire_file },
-        )?;
-        write_line(
-            &mut output,
-            &Startup {
-                uploads: Uploads(uploads.as_ref()),
-            },
-        )?;
-        state
-    };
+    let mut services = Services::new();
+    let mut platform = Host::new(&mut services);
+    let state = game::GameState::initialize(
+        PersistentMemory {
+            bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
+        },
+        &mut platform,
+    )?;
+    write_line(
+        &mut output,
+        &Startup {
+            uploads: Uploads(&[]),
+        },
+    )?;
 
     let mut input = BufReader::new(io::stdin().lock());
     let mut line = Vec::with_capacity(MAX_INPUT_BYTES + 1);
-    loop {
+    let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
+    while !platform.backend().exit_requested() {
         line.clear();
         let count = input
             .by_ref()
@@ -98,8 +96,24 @@ fn run<G: Game>() -> Result<(), Box<dyn std::error::Error>> {
             return Err("input line exceeds 16384 bytes".into());
         }
         match serde_json::from_slice(&line)? {
-            Input::Frame(input) => {
+            Input::Frame {
+                dt,
+                controller,
+                close_requested,
+            } => {
+                if close_requested {
+                    platform.backend_mut().request_close();
+                }
+                apply_window_requests(platform.backend_mut());
+                let count = platform.poll_events(&mut events);
+                let input = FrameInput::new(
+                    dt,
+                    controller,
+                    platform.backend().window_state(),
+                    &events[..count],
+                );
                 let frame = state.update(
+                    &mut platform,
                     TransientMemory {
                         bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
                     },
@@ -112,7 +126,7 @@ fn run<G: Game>() -> Result<(), Box<dyn std::error::Error>> {
                 frames,
             } => {
                 let frames = &mut audio[..frames];
-                state.update_audio(AudioBuffer::new(sample_rate, frames));
+                state.update_audio(&mut platform, AudioBuffer::new(sample_rate, frames));
                 write_line(
                     &mut output,
                     &AudioOutput {
@@ -122,6 +136,29 @@ fn run<G: Game>() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
         }
+    }
+    Ok(())
+}
+
+fn apply_window_requests(services: &mut Services) {
+    for _ in 0..MAX_REQUESTS {
+        let Some((id, change)) = services.take_window_request() else {
+            break;
+        };
+        let mut state = services.window_state();
+        match change {
+            WindowChange::Size { width, height } => {
+                state.width = width;
+                state.height = height;
+                state.framebuffer_width = width;
+                state.framebuffer_height = height;
+            }
+            WindowChange::Mode(mode) => state.mode = mode,
+            WindowChange::Cursor(cursor) => state.cursor = cursor,
+            WindowChange::Title(_) => {}
+        }
+        services.set_window_state(state);
+        services.complete_window(id, WindowStatus::Applied);
     }
 }
 

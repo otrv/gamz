@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 game = { path = "../game" }
+platform = { path = "../platform", default-features = false }
 platform-api = { path = "../platform-api" }
 renderer = { path = "../renderer" }
 wasm-bindgen = { version = "=0.2.129", default-features = false, features = ["std"] }

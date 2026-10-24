@@ -8,10 +8,11 @@ use platform_api::audio::{AudioBuffer, StereoFrame};
 use platform_api::input::{ButtonPosition, ButtonState, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
-    Canvas, Color, Frame, Point, Radians, Rect, RectStyle, RenderCommand, Size, StrokeWidth,
-    TextureUpload,
+    Canvas, Color, Frame, FrameOutput, Point, Radians, Rect, RectStyle, RenderCommand, Size,
+    StrokeWidth,
 };
-use platform_api::services::{PlatformApi, StartupError};
+use platform_api::services::{PlatformEvent, StartupError};
+use platform_api::{Game, Platform};
 
 const BRICK_COUNT: usize = 32;
 const BRICK_HALF: Vec2 = Vec2::new(68.0, 14.0);
@@ -97,20 +98,21 @@ impl GameState {
     }
 }
 
-impl platform_api::Game for GameState {
-    fn initialize<'p, 't>(
-        persistent: PersistentMemory<'p>,
-        _transient: TransientMemory<'t>,
-        _api: &PlatformApi,
-    ) -> Result<(&'p mut Self, impl AsRef<[TextureUpload<'t>]>), StartupError> {
-        let PersistentMemory { bytes } = persistent;
+impl Game for GameState {
+    fn initialize<'p>(
+        memory: PersistentMemory<'p>,
+        platform: &mut impl Platform<'p>,
+    ) -> Result<&'p mut Self, StartupError> {
         let required = core::mem::size_of::<Self>() + core::mem::align_of::<Self>() - 1;
-        if bytes.len() < required {
+        if memory.bytes.len() < required {
             return Err(StartupError::InsufficientPersistentMemory {
                 required,
-                available: bytes.len(),
+                available: memory.bytes.len(),
             });
         }
+        let (root, io) = memory.bytes.split_at_mut(required);
+        let capacity = io.len();
+        platform.set_persistent_memory(Arena::new(io).push_slice(capacity, 0_u8));
         let mut state = Self {
             bricks: EntityStorage::new(),
             paddle: Point::new(640.0, PADDLE_Y),
@@ -118,10 +120,18 @@ impl platform_api::Game for GameState {
             lives: 3,
         };
         state.reset();
-        Ok((Arena::new(bytes).push(state), []))
+        Ok(Arena::new(root).push(state))
     }
 
-    fn update<'a>(&mut self, memory: TransientMemory<'a>, input: &FrameInput) -> Frame<'a> {
+    fn update<'p, 'a>(
+        &mut self,
+        platform: &mut impl Platform<'p>,
+        memory: TransientMemory<'a>,
+        input: &FrameInput<'_>,
+    ) -> FrameOutput<'a> {
+        if input.events().contains(&PlatformEvent::CloseRequested) {
+            platform.request_exit();
+        }
         let dt = input.dt.seconds().min(0.05);
         let start = pressed(input.controller.start);
         if matches!(self.phase, Phase::Won | Phase::Lost) {
@@ -143,10 +153,10 @@ impl platform_api::Game for GameState {
                 advance(self, dt);
             }
         }
-        draw(self, memory)
+        FrameOutput::new(draw(self, memory), &[])
     }
 
-    fn update_audio(&mut self, mut buffer: AudioBuffer<'_>) {
+    fn update_audio<'p>(&mut self, _platform: &mut impl Platform<'p>, mut buffer: AudioBuffer<'_>) {
         buffer.frames_mut().fill(StereoFrame::default());
     }
 }

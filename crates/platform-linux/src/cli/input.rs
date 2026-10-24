@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use platform_api::audio::{MAX_AUDIO_FRAMES, SampleRate};
-use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
+use platform_api::input::{ButtonPosition, ButtonState, ControllerInput};
 use platform_api::timing::DeltaTime;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer};
@@ -9,7 +9,11 @@ use serde::{Deserialize, Deserializer};
 #[derive(Deserialize)]
 #[serde(try_from = "InputFields")]
 pub(super) enum Input {
-    Frame(FrameInput),
+    Frame {
+        dt: DeltaTime,
+        controller: ControllerInput,
+        close_requested: bool,
+    },
     Audio {
         sample_rate: SampleRate,
         frames: usize,
@@ -25,6 +29,8 @@ struct InputFields {
     controller: Option<Controller>,
     #[serde(default, deserialize_with = "present")]
     audio: Option<AudioFields>,
+    #[serde(default, deserialize_with = "present")]
+    close_requested: Option<bool>,
 }
 
 fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
@@ -50,11 +56,20 @@ impl TryFrom<InputFields> for Input {
     type Error = &'static str;
 
     fn try_from(fields: InputFields) -> Result<Self, Self::Error> {
-        match (fields.dt, fields.controller, fields.audio) {
-            (Some(Elapsed(dt)), Some(Controller(controller)), None) => {
-                Ok(Self::Frame(FrameInput { dt, controller }))
+        match (
+            fields.dt,
+            fields.controller,
+            fields.audio,
+            fields.close_requested,
+        ) {
+            (Some(Elapsed(dt)), Some(Controller(controller)), None, close_requested) => {
+                Ok(Self::Frame {
+                    dt,
+                    controller,
+                    close_requested: close_requested.unwrap_or(false),
+                })
             }
-            (None, None, Some(audio)) => {
+            (None, None, Some(audio), None) => {
                 let sample_rate = SampleRate::from_hz(audio.sample_rate)
                     .ok_or("audio.sample_rate must be between 1 and 192000")?;
                 if audio.frames > MAX_AUDIO_FRAMES {
@@ -65,9 +80,11 @@ impl TryFrom<InputFields> for Input {
                     frames: audio.frames,
                 })
             }
-            (_, _, Some(_)) => Err("audio cannot be combined with dt or controller"),
-            (None, _, None) => Err("missing field dt"),
-            (_, None, None) => Err("missing field controller"),
+            (_, _, Some(_), _) => {
+                Err("audio cannot be combined with dt, controller or close_requested")
+            }
+            (None, _, None, _) => Err("missing field dt"),
+            (_, None, None, _) => Err("missing field controller"),
         }
     }
 }

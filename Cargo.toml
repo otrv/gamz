@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-default-members = ["crates/game", "crates/game-core", "crates/game-memory", "crates/platform-api", "crates/platform-linux", "crates/renderer"]
+default-members = ["crates/game", "crates/game-core", "crates/game-memory", "crates/platform", "crates/platform-api", "crates/platform-linux", "crates/renderer"]
 
 [workspace.package]
 edition = "2024"

@@ -12,11 +12,15 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use game::GameState;
+use platform::Host;
 use platform_api::Game;
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
-use platform_api::services::{PlatformApi, StartupError};
+use platform_api::render::FrameOutput;
+use platform_api::services::{
+    self as contract, CursorMode, MAX_EVENTS, MAX_REQUESTS, PlatformEvent, RequestId, StartupError,
+    WindowChange, WindowMode, WindowStatus,
+};
 use platform_api::timing::DeltaTime;
 use renderer::wgpu::{Renderer, RendererError};
 use winit::application::ApplicationHandler;
@@ -26,11 +30,11 @@ use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
-use winit::window::{Window, WindowId};
+use winit::window::{Fullscreen, Window, WindowId};
 
 use crate::memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
 use audio::Audio;
-use services::load_entire_file;
+use services::Services;
 
 const WINDOW_TITLE: &str = "gamz";
 const WINDOW_SIZE: LogicalSize<f64> = LogicalSize::new(1280.0, 720.0);
@@ -68,6 +72,15 @@ enum WindowState {
 struct Platform {
     window: WindowState,
     controller: ControllerInput,
+    close_requested: bool,
+    window_requests: [Option<WindowRequest>; MAX_REQUESTS],
+}
+
+#[derive(Clone, Copy)]
+struct WindowRequest {
+    id: RequestId,
+    change: WindowChange,
+    deadline: Instant,
 }
 
 impl ApplicationHandler for Platform {
@@ -89,7 +102,8 @@ impl ApplicationHandler for Platform {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested | WindowEvent::Destroyed => event_loop.exit(),
+            WindowEvent::CloseRequested => self.close_requested = true,
+            WindowEvent::Destroyed => event_loop.exit(),
             WindowEvent::Focused(false) => self.controller.release_all(),
             WindowEvent::KeyboardInput {
                 event:
@@ -102,7 +116,7 @@ impl ApplicationHandler for Platform {
                 ..
             } => {
                 if key == KeyCode::Escape && state == ElementState::Pressed {
-                    event_loop.exit();
+                    self.close_requested = true;
                 }
                 if let Some(button) = controller_button(&mut self.controller, key) {
                     button.record(match state {
@@ -117,7 +131,7 @@ impl ApplicationHandler for Platform {
 }
 
 fn main() -> std::process::ExitCode {
-    match run::<GameState>() {
+    match run() {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("gamz: {error}");
@@ -126,7 +140,7 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn run<G: Game>() -> Result<(), PlatformError> {
+fn run() -> Result<(), PlatformError> {
     let mut persistent = Vec::<u8>::new();
     persistent
         .try_reserve_exact(PERSISTENT_MEMORY_BYTES)
@@ -137,17 +151,9 @@ fn run<G: Game>() -> Result<(), PlatformError> {
         .map_err(PlatformError::Memory)?;
     let transient_bytes = &mut reservation.spare_capacity_mut()[..TRANSIENT_MEMORY_BYTES];
     let mut event_loop = EventLoop::new().map_err(PlatformError::EventLoop)?;
-    let mut platform = Platform {
-        window: WindowState::Opening,
-        controller: ControllerInput::default(),
+    let Some(mut platform) = open_window(&mut event_loop)? else {
+        return Ok(());
     };
-    while matches!(platform.window, WindowState::Opening) {
-        if let PumpStatus::Exit(code) =
-            event_loop.pump_app_events(Some(Duration::from_millis(16)), &mut platform)
-        {
-            return exit_result(platform.window, code);
-        }
-    }
     let WindowState::Open(window) = &platform.window else {
         return exit_result(platform.window, 0);
     };
@@ -155,31 +161,26 @@ fn run<G: Game>() -> Result<(), PlatformError> {
     let mut renderer =
         pollster::block_on(Renderer::new(Arc::clone(window), size.width, size.height))
             .map_err(PlatformError::Renderer)?;
-    let state = {
-        let (state, uploads) = G::initialize(
-            PersistentMemory {
-                bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
-            },
-            TransientMemory {
-                bytes: transient_bytes,
-            },
-            &PlatformApi { load_entire_file },
-        )
-        .map_err(PlatformError::Startup)?;
-        for &upload in uploads.as_ref() {
-            renderer
-                .upload_texture(upload)
-                .map_err(PlatformError::Renderer)?;
-        }
-        state
-    };
-    let mut audio = Audio::start(state).map_err(PlatformError::Audio)?;
+    let mut services = Services::new();
+    let mut boundary = Host::new(&mut services);
+    let state = game::GameState::initialize(
+        PersistentMemory {
+            bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
+        },
+        &mut boundary,
+    )
+    .map_err(PlatformError::Startup)?;
+    if boundary.backend().exit_requested() {
+        return Ok(());
+    }
+    let mut audio = Audio::start(state, &mut boundary).map_err(PlatformError::Audio)?;
+    let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
     let frame_interval =
         Duration::from_nanos(1_000_000_000_u64.div_ceil(u64::from(MAX_FRAMES_PER_SECOND.get())));
     let mut previous_frame = Instant::now();
     let mut next_frame = previous_frame + frame_interval;
     let mut next_stats = next_frame;
-    loop {
+    while !boundary.backend().exit_requested() {
         let timeout = next_frame.saturating_duration_since(Instant::now());
         if let PumpStatus::Exit(code) = event_loop.pump_app_events(Some(timeout), &mut platform) {
             return exit_result(platform.window, code);
@@ -187,6 +188,11 @@ fn run<G: Game>() -> Result<(), PlatformError> {
         let WindowState::Open(window) = &platform.window else {
             continue;
         };
+        apply_window_requests(
+            boundary.backend_mut(),
+            window,
+            &mut platform.window_requests,
+        );
         if Instant::now() < next_frame {
             continue;
         }
@@ -198,33 +204,165 @@ fn run<G: Game>() -> Result<(), PlatformError> {
                 .map_err(PlatformError::Renderer)?;
         }
         let now = Instant::now();
-        let input = FrameInput {
-            dt: DeltaTime::from_elapsed(now.duration_since(previous_frame)),
-            controller: platform.controller,
-        };
+        let dt = DeltaTime::from_elapsed(now.duration_since(previous_frame));
+        let controller = platform.controller;
         previous_frame = now;
         platform.controller.start_frame();
+        if core::mem::take(&mut platform.close_requested) {
+            boundary.backend_mut().request_close();
+        }
+        let count = boundary.poll_events(&mut events);
+        let input = FrameInput::new(
+            dt,
+            controller,
+            boundary.backend().window_state(),
+            &events[..count],
+        );
         let frame = state.update(
+            &mut boundary,
             TransientMemory {
                 bytes: transient_bytes,
             },
             &input,
         );
-        audio
-            .update(state)
-            .map_err(|error| PlatformError::Audio(error.into()))?;
-        window.pre_present_notify();
-        if let Some(stats) = renderer.draw(&frame).map_err(PlatformError::Renderer)?
-            && now >= next_stats
-        {
-            println!(
-                "commands={} quads={} batches={} vertex_bytes={}",
-                stats.commands, stats.quads, stats.batches, stats.vertex_bytes
-            );
-            next_stats = now + Duration::from_secs(1);
+        if boundary.backend().exit_requested() {
+            return Ok(());
         }
+        audio
+            .update(state, &mut boundary)
+            .map_err(|error| PlatformError::Audio(error.into()))?;
+        if boundary.backend().exit_requested() {
+            return Ok(());
+        }
+        present(&mut renderer, window, &frame, now, &mut next_stats)?;
         next_frame = now + frame_interval;
     }
+    Ok(())
+}
+
+fn open_window(event_loop: &mut EventLoop<()>) -> Result<Option<Platform>, PlatformError> {
+    let mut platform = Platform {
+        window: WindowState::Opening,
+        controller: ControllerInput::default(),
+        close_requested: false,
+        window_requests: [None; MAX_REQUESTS],
+    };
+    while matches!(platform.window, WindowState::Opening) {
+        if let PumpStatus::Exit(code) =
+            event_loop.pump_app_events(Some(Duration::from_millis(16)), &mut platform)
+        {
+            return exit_result(platform.window, code).map(|()| None);
+        }
+    }
+    Ok(Some(platform))
+}
+
+fn present(
+    renderer: &mut Renderer,
+    window: &Window,
+    frame: &FrameOutput<'_>,
+    now: Instant,
+    next_stats: &mut Instant,
+) -> Result<(), PlatformError> {
+    let uploaded = renderer
+        .upload_textures(frame.uploads())
+        .map_err(PlatformError::Renderer)?;
+    assert!(uploaded);
+    window.pre_present_notify();
+    if let Some(stats) = renderer
+        .draw(&frame.frame)
+        .map_err(PlatformError::Renderer)?
+        && now >= *next_stats
+    {
+        println!(
+            "commands={} quads={} batches={} vertex_bytes={}",
+            stats.commands, stats.quads, stats.batches, stats.vertex_bytes
+        );
+        *next_stats = now + Duration::from_secs(1);
+    }
+    Ok(())
+}
+
+fn apply_window_requests(
+    services: &mut Services,
+    window: &Window,
+    pending: &mut [Option<WindowRequest>; MAX_REQUESTS],
+) {
+    let now = Instant::now();
+    let mut state = services.window_state();
+    for slot in &mut *pending {
+        if slot.is_some() {
+            continue;
+        }
+        let Some((id, change)) = services.take_window_request() else {
+            break;
+        };
+        match change {
+            WindowChange::Size { width, height } => {
+                let _ = window.request_inner_size(LogicalSize::new(width, height));
+                *slot = Some(WindowRequest {
+                    id,
+                    change,
+                    deadline: now + Duration::from_secs(2),
+                });
+            }
+            WindowChange::Mode(mode) => {
+                window.set_fullscreen(match mode {
+                    WindowMode::Windowed => None,
+                    WindowMode::Fullscreen => Some(Fullscreen::Borderless(None)),
+                });
+                *slot = Some(WindowRequest {
+                    id,
+                    change,
+                    deadline: now + Duration::from_secs(2),
+                });
+            }
+            WindowChange::Cursor(cursor) => {
+                window.set_cursor_visible(cursor == CursorMode::Visible);
+                state.cursor = cursor;
+                services.complete_window(id, WindowStatus::Applied);
+            }
+            WindowChange::Title(title) => {
+                window.set_title(title.as_str());
+                services.complete_window(id, WindowStatus::Applied);
+            }
+        }
+    }
+    let size = window.inner_size();
+    let logical = size.to_logical::<u32>(window.scale_factor());
+    state = contract::WindowState {
+        width: logical.width,
+        height: logical.height,
+        framebuffer_width: size.width,
+        framebuffer_height: size.height,
+        focused: window.has_focus(),
+        mode: if window.fullscreen().is_some() {
+            WindowMode::Fullscreen
+        } else {
+            WindowMode::Windowed
+        },
+        cursor: state.cursor,
+    };
+    for slot in pending {
+        let Some(request) = *slot else { continue };
+        let applied = match request.change {
+            WindowChange::Size { width, height } => state.width == width && state.height == height,
+            WindowChange::Mode(mode) => state.mode == mode,
+            WindowChange::Cursor(_) | WindowChange::Title(_) => unreachable!(),
+        };
+        if applied || now >= request.deadline {
+            services.complete_window(
+                request.id,
+                if applied {
+                    WindowStatus::Applied
+                } else {
+                    WindowStatus::Denied
+                },
+            );
+            *slot = None;
+        }
+    }
+    services.set_window_state(state);
 }
 
 fn exit_result(window: WindowState, code: i32) -> Result<(), PlatformError> {

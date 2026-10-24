@@ -52,23 +52,18 @@ Publish the entire `target/web/game/` directory on a static web host. Keep the
 `snippets/` directory and serve `.wasm` files as `application/wasm`. The build
 needs no game server or JavaScript package manager.
 
-For files loaded through `PlatformApi::load_entire_file`, copy them into the
-output directory and list their relative paths in `assets.json`, for example
-`["assets/level.bin"]`. The browser loads these files before game initialization.
-Rebuilding preserves this manifest and added files. Keep your source assets
-outside `target/`, because `cargo clean` removes that directory.
-
-The manifest accepts at most 256 files, with a total budget of 64 MiB and a
-per-file limit of 16 MiB plus 8 bytes. Use relative paths without empty components,
-`.` or `..` components, backslashes, colons, nulls, `%`, `?`, or `#`.
+Keep files requested by the game in the output directory at their relative
+paths, such as `target/web/game/assets/level.bin`. Rebuilding preserves added
+files. Keep your source assets outside `target/`, because `cargo clean` removes
+that directory. Game writes stay in browser storage, not on the static host.
 
 ## Make your game
 
 Replace breakout's state and logic in
-[crates/game/src/lib.rs](crates/game/src/lib.rs). Keep `GameState` as the library's
-entry type and implement the [Game trait](crates/platform-api/src/lib.rs) for
+[crates/game/src/lib.rs](crates/game/src/lib.rs). Implement the
+[`platform_api::Game` trait](crates/platform-api/src/game.rs) for
 initialization, frame updates, and audio output. Keep your game's assets and
-build script in `crates/game`. There is no game-selection flag or registry.
+build script in `crates/game`.
 
 For embedding assets, see the [asset-packer guide](crates/asset-packer/README.md).
 
