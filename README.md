@@ -24,7 +24,7 @@ Build and start the game with Cargo. Rustup uses the version pinned in
 `rust-toolchain.toml`:
 
 ```sh
-cargo run -p platform --features linux --bin linux --locked
+cargo run -p platform-linux --features linux --bin linux --locked
 ```
 
 Use `cargo build` in place of `cargo run` to build without launching, or add

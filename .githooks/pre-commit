@@ -42,7 +42,7 @@ if ! "$all"; then
                 format=true; cli=true; linux=true; web=true; core=true ;;
             crates/renderer/*)
                 format=true; linux=true; web=true ;;
-            crates/platform/*)
+            crates/platform-linux/*)
                 format=true; cli=true; linux=true ;;
             crates/platform-web/*)
                 format=true; web=true; package_web=true ;;
@@ -80,13 +80,13 @@ fi
 if "$all"; then
     cargo clippy --workspace --all-targets --all-features --locked --target "$native_target"
 elif "$cli" && "$linux"; then
-    cargo clippy -p platform --all-targets --all-features --locked --target "$native_target"
+    cargo clippy -p platform-linux --all-targets --all-features --locked --target "$native_target"
 fi
 if "$all" || "$cli"; then
-    cargo clippy -p platform --no-default-features --features cli --all-targets --locked --target "$native_target"
+    cargo clippy -p platform-linux --no-default-features --features cli --all-targets --locked --target "$native_target"
 fi
 if "$all" || "$linux"; then
-    cargo clippy -p platform --no-default-features --features linux --all-targets --locked --target "$native_target"
+    cargo clippy -p platform-linux --no-default-features --features linux --all-targets --locked --target "$native_target"
 fi
 if "$all" || "$web"; then
     cargo clippy -p platform-web --lib --locked --target "$web_target"

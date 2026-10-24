@@ -1171,7 +1171,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
-name = "platform"
+name = "platform-api"
+version = "0.1.0"
+
+[[package]]
+name = "platform-linux"
 version = "0.1.0"
 dependencies = [
  "alsa",
@@ -1184,10 +1188,6 @@ dependencies = [
  "serde_json",
  "winit",
 ]
-
-[[package]]
-name = "platform-api"
-version = "0.1.0"
 
 [[package]]
 name = "platform-web"
