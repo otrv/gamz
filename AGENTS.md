@@ -18,8 +18,7 @@ The compiler, Clippy, rustfmt, and cargo-deny own their configured checks. Prose
 2. Get approval before creating a crate, changing a crate's public interface, adding a workspace dependency, or adding an external crate dependency. Create approved crates with `cargo new crates/<name>`.
 3. Finish the implementation, integration, and cleanup. Resolve concrete correctness and design problems. Optional optimizations and hypothetical requirements are not technical debt.
 4. Verify the completed changes using the scope below, then run `.githooks/pre-commit`. Use `.githooks/pre-commit --all` for full validation. Install missing prerequisites with `./scripts/setup`. Never use `--no-verify`. If a diagnostic is wrong, stop and propose a central policy change instead of suppressing it or distorting clear code.
-5. Ask an oracle reviewing subagent to inspect the completed changes. Supply the original requirements, approvals, exact review scope, changed paths, verification commands and results, and limitations. Ask it to follow the review procedure below without assuming the implementation is correct.
-6. Fix every substantiated finding. Resolve disputed findings with evidence and ask oracle to reassess them. Escalate unresolved policy decisions to the user. After fixes, repeat affected runtime verification and the hook, then return the revised scope to oracle. Finish only when the final tree has passing checks and no unresolved review findings.
+5. Fix every substantiated finding. Resolve disputed findings with evidence and escalate unresolved policy decisions to the user. After fixes, repeat affected runtime verification and the hook. Finish only when the final tree has passing checks and no unresolved findings.
 
 After the same correction class occurs twice, use `/correct`. Get approval before adding a prevention check.
 
@@ -43,9 +42,17 @@ Report unmeasured performance and unverified hardware behavior as limitations. S
 
 ## Review independently
 
+Start an oracle review or reassessment only when the user explicitly requests it. Implementation and verification alone do not authorize a review. For a requested oracle review, supply the original requirements, approvals, exact review scope, changed paths, verification commands and results, and limitations. Ask oracle to follow the procedure below without assuming the implementation is correct.
+
 1. State the scope. Use the user's named scope. Otherwise compare against the merge base with `origin/main`, falling back to `main`, including uncommitted and untracked files. Report an empty scope as empty, not as a repository-wide clean review.
 2. Read whole affected functions, types, and modules where contracts, bounds, or ownership require context. Apply the standards to code and prose. Check necessity, approval evidence, and enforcement gaps, not just the diff's syntax.
 3. Run the checks unless the implementer supplied successful results for the exact reviewed tree. Inspect those results and state which checks you ran or relied on. Independently probe missing or questionable evidence within the verification scope above. Never infer a pass from an intended command or a screenshot alone.
 4. Report failed checks first without duplicating diagnostics. Give each finding a location, violated contract or rule, consequence, and concrete fix. Separate defects from optional improvements. State unverified behavior even when there are no findings.
 
 Review-only work is read-only. Oracle reports findings to the implementer rather than editing files or starting another review cycle itself.
+
+## Workflow enforcement
+
+| Rule | Enforcement |
+| --- | --- |
+| [Oracle request gate](#review-independently) | Agent checks the user's request before invoking oracle. Repository checks cannot observe agent tool calls. |
