@@ -7,6 +7,7 @@ Inherit the user's global `AGENTS.md` without copying it here.
 ## Load guidance by task
 
 - **Implement:** Read the [design priorities](CODING_STANDARDS.md#design-constraints) and [architecture boundaries](CODING_STANDARDS.md#architecture-and-memory). Before changing storage, representation, runtime behavior, unsafe code, tests, or prose, read the matching section. Consult [review criteria](CODING_STANDARDS.md#review-criteria) for the API and style choices in scope.
+- **Prose:** Load `writing-for-agents` before drafting or revising any prose, including documentation, commit messages, and responses. Check the final text against the skill before delivering it. Preserve the intended audience. Keep README files human-facing and agent workflow guidance in agent instructions.
 - **Review:** Read all of `CODING_STANDARDS.md`. Apply every relevant rule, including constraints and enforcement-maintenance rules. Review evidence independently of the implementer's conclusions.
 - **Change enforcement:** Before changing crates, dependencies, toolchains, lint configuration, setup, builds, or checks, read [enforcement maintenance](CODING_STANDARDS.md#enforcement-maintenance).
 
@@ -56,3 +57,4 @@ Review-only work is read-only. Oracle reports findings to the implementer rather
 | Rule | Enforcement |
 | --- | --- |
 | [Oracle request gate](#review-independently) | Agent checks the user's request before invoking oracle. Repository checks cannot observe agent tool calls. |
+| [Prose guidance](#load-guidance-by-task) | Agent loads the skill and checks the final text. Repository checks cannot verify skill use or judge the intended audience. |
