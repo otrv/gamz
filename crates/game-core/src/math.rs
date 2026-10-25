@@ -150,7 +150,18 @@ impl Vec2x4 {
 
     #[must_use]
     pub fn lerp(self, other: Self, weights: [f32; 4]) -> Self {
-        self + (other - self) * weights
+        let weights = Vec4::from_array(weights);
+        let start = weights.cmpeq(Vec4::ZERO);
+        let end = weights.cmpeq(Vec4::ONE);
+        let weights = DVec4::from(weights);
+        let interpolate = |a: Vec4, b: Vec4| {
+            let value = DVec4::from(a) + (DVec4::from(b) - DVec4::from(a)) * weights;
+            Vec4::select(start, a, Vec4::select(end, b, value.as_vec4()))
+        };
+        Self {
+            x: interpolate(self.x, other.x),
+            y: interpolate(self.y, other.y),
+        }
     }
 
     #[must_use]
@@ -248,6 +259,54 @@ mod tests {
             close(dot[lane], expected_dot);
             close(a[lane].dot(b[lane]), expected_dot);
         }
+    }
+
+    #[test]
+    fn interpolation_preserves_finite_endpoints_and_avoids_intermediate_overflow() {
+        let a = [
+            Vec2::new(-f32::MAX, f32::MAX),
+            Vec2::new(-f32::MAX, f32::MAX),
+            Vec2::new(-f32::MAX, f32::MAX),
+            Vec2::new(1.0e8, -f32::MAX),
+        ];
+        let b = [
+            Vec2::new(f32::MAX, -f32::MAX),
+            Vec2::new(f32::MAX, -f32::MAX),
+            Vec2::new(f32::MAX, -f32::MAX),
+            Vec2::new(1.0, f32::from_bits(1)),
+        ];
+        let weights = [0.0, 0.5, 1.0, 1.0];
+        let expected = [a[0], Vec2::ZERO, b[2], b[3]];
+        let batch = Vec2x4::from_array(a)
+            .lerp(Vec2x4::from_array(b), weights)
+            .to_array();
+        for lane in 0..4 {
+            assert_eq!(batch[lane], expected[lane]);
+            assert_eq!(a[lane].lerp(b[lane], weights[lane]), expected[lane]);
+        }
+
+        let a = [
+            Vec2::new(f32::MAX * 0.5, -f32::MAX * 0.5),
+            Vec2::new(f32::MAX * 0.25, -f32::MAX * 0.25),
+            Vec2::new(f32::MAX, -f32::MAX),
+            Vec2::new(-0.0, f32::from_bits(1)),
+        ];
+        let b = [a[1], a[0], a[2], Vec2::new(f32::MAX, -f32::MAX)];
+        let weights = [3.0, -2.0, f32::MAX, 0.0];
+        let expected = [
+            Vec2::new(-f32::MAX * 0.25, f32::MAX * 0.25),
+            Vec2::new(-f32::MAX * 0.25, f32::MAX * 0.25),
+            a[2],
+            a[3],
+        ];
+        let batch = Vec2x4::from_array(a)
+            .lerp(Vec2x4::from_array(b), weights)
+            .to_array();
+        for lane in 0..4 {
+            assert_eq!(batch[lane], expected[lane]);
+            assert_eq!(a[lane].lerp(b[lane], weights[lane]), expected[lane]);
+        }
+        assert_eq!(batch[3].x.to_bits(), (-0.0_f32).to_bits());
     }
 
     #[test]
