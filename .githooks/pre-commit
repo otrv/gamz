@@ -6,8 +6,6 @@ cd "$(git rev-parse --show-toplevel)"
 all=false
 cli=false
 linux=false
-web=false
-package_web=false
 core=false
 memory=false
 math=false
@@ -34,23 +32,21 @@ if ! "$all"; then
             README.md|docs/*.md|crates/*/README.md|.agents/skills/*/*.md)
                 ;;
             crates/game/*)
-                format=true; cli=true; linux=true; web=true ;;
+                format=true; cli=true; linux=true ;;
             crates/game-core/*)
-                format=true; cli=true; linux=true; web=true; core=true ;;
+                format=true; cli=true; linux=true; core=true ;;
             crates/game-memory/*)
-                format=true; cli=true; linux=true; web=true; memory=true; miri=true ;;
+                format=true; cli=true; linux=true; memory=true; miri=true ;;
             crates/math/*)
-                format=true; cli=true; linux=true; web=true; core=true; math=true ;;
+                format=true; cli=true; linux=true; core=true; math=true ;;
             crates/platform-api/*)
-                format=true; cli=true; linux=true; web=true; core=true ;;
+                format=true; cli=true; linux=true; core=true ;;
             crates/renderer/*)
-                format=true; linux=true; web=true ;;
+                format=true; linux=true ;;
             crates/platform/*)
-                format=true; cli=true; linux=true; web=true ;;
+                format=true; cli=true; linux=true ;;
             crates/platform-linux/*)
                 format=true; cli=true; linux=true ;;
-            crates/platform-web/*)
-                format=true; web=true; package_web=true ;;
             crates/asset-packer/*)
                 format=true; packer=true ;;
             *) all=true ;;
@@ -59,7 +55,6 @@ if ! "$all"; then
 fi
 
 native_target=x86_64-unknown-linux-gnu
-web_target=wasm32-unknown-unknown
 
 set -x
 if "$all" || "$format"; then
@@ -92,12 +87,6 @@ if "$all" || "$cli"; then
 fi
 if "$all" || "$linux"; then
     cargo clippy -p platform-linux --no-default-features --features linux --all-targets --locked --target "$native_target"
-fi
-if "$all" || "$web"; then
-    cargo clippy -p platform-web --lib --locked --target "$web_target"
-fi
-if "$all" || "$package_web"; then
-    ./scripts/build-web
 fi
 if ! "$all" && "$packer"; then
     cargo clippy -p asset-packer --all-targets --all-features --locked --target "$native_target"

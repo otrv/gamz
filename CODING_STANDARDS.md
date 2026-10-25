@@ -155,9 +155,8 @@ are standalone usage guides covering invocation, inputs, outputs, and integratio
 
 Reject handwritten local lint suppressions in configurations and attributes the
 checks do not cover, including allowances for centrally allowed lints. This also
-applies to the Serde-compatible `deny` exceptions and the `platform-web` exceptions
-described under enforcement maintenance. Third-party macro-generated allowances
-are not handwritten suppressions.
+applies to the Serde-compatible `deny` exceptions described under enforcement
+maintenance. Third-party macro-generated allowances are not handwritten suppressions.
 
 ### Tests
 
@@ -357,12 +356,11 @@ Read the configuration rather than duplicating its rules in source-review prose:
 `Cargo.toml`, `clippy.toml`, `rustfmt.toml`, `rust-toolchain.toml`, and the workspace
 and asset-packer `deny.toml` files. The hook owns the check command list and
 affected-path routing. `scripts/setup` owns prerequisites and tool installation.
-`scripts/build-web` owns web packaging.
 
 Review configuration changes by tracing their enforcement path. Check lint and
 edition inheritance, exact pins, deployment targets, dependency boundaries, and
 local and CI coverage. Every crate inherits the workspace edition. Every crate
-except unsafe crates and `platform-web` inherits the workspace lints.
+except unsafe crates inherits the workspace lints.
 
 Keep Clippy groups at `warn` under `forbid(warnings)` so central exceptions remain
 possible. Preserve `forbidden_lint_groups` to prevent local group overrides.
@@ -380,16 +378,12 @@ Serde derives need `non_camel_case_types`, `non_upper_case_globals`,
 `unused_attributes`, and `clippy::useless_attribute` at `deny` rather than
 `forbid`. Preserve these workspace-wide exceptions for generated allowances.
 
-`platform-web` copies the workspace lint tables because `wasm-bindgen` generates
-allowances inside callers. Only there, use `deny` instead of `forbid` for
-`warnings`, `long_running_const_eval`, and configured Clippy restriction lints.
-Keep every other level identical, including `unsafe_code = "forbid"`.
 Unsafe crates copy the tables with only `unsafe_code` changed to `"allow"`.
-Update both kinds of copies when workspace lints change.
+Update these copies when workspace lints change.
 
-Keep the hook a sequential runner for standard tools. Keep installation and web
-packaging in their scripts. Do not add custom source checks, duplicate lint
-policy, or automated configuration audits. Keep setup, hook, and web-build tool
+Keep the hook a sequential runner for standard tools. Keep installation in
+`scripts/setup`. Do not add custom source checks, duplicate lint
+policy, or automated configuration audits. Keep setup and hook tool
 versions and targets aligned. Use pinned stable rustfmt with its default width.
 
 When dependencies change, review affected-path routing, including consumers.

@@ -7,10 +7,6 @@ use platform_api::render::{
     Frame, Image, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURES, Sampling, TextureUpload,
 };
 use std::fmt;
-#[cfg(target_arch = "wasm32")]
-use std::sync::Arc;
-#[cfg(target_arch = "wasm32")]
-use std::sync::atomic::{AtomicBool, Ordering};
 use wgpu::util::DeviceExt;
 
 const GPU_QUADS: usize = MAX_QUADS + 1;
@@ -63,10 +59,6 @@ pub struct Renderer {
     failure: Failure,
     pending: [Option<wgpu::SubmissionIndex>; FRAMES_IN_FLIGHT],
     upload_pending: Option<wgpu::SubmissionIndex>,
-    #[cfg(target_arch = "wasm32")]
-    upload_completed: Arc<AtomicBool>,
-    #[cfg(target_arch = "wasm32")]
-    completed: [Arc<AtomicBool>; FRAMES_IN_FLIGHT],
     next_submission: usize,
 }
 
@@ -154,10 +146,6 @@ impl Renderer {
             failure,
             pending: std::array::from_fn(|_| None),
             upload_pending: None,
-            #[cfg(target_arch = "wasm32")]
-            upload_completed: Arc::new(AtomicBool::new(true)),
-            #[cfg(target_arch = "wasm32")]
-            completed: std::array::from_fn(|_| Arc::new(AtomicBool::new(true))),
             next_submission: 0,
         };
         renderer.resize(width, height)?;
@@ -180,17 +168,10 @@ impl Renderer {
         self.failure.check()
     }
 
-    pub fn upload_textures(
-        &mut self,
-        uploads: &[TextureUpload<'_>],
-    ) -> Result<bool, RendererError> {
+    pub fn upload_textures(&mut self, uploads: &[TextureUpload<'_>]) -> Result<(), RendererError> {
         self.failure.check()?;
         if uploads.is_empty() {
-            return Ok(true);
-        }
-        #[cfg(target_arch = "wasm32")]
-        if !self.upload_completed.load(Ordering::Acquire) {
-            return Ok(false);
+            return Ok(());
         }
         if let Some(submission) = self.upload_pending.take() {
             self.failure.wait(&self.device, Some(submission))?;
@@ -207,15 +188,7 @@ impl Renderer {
             self.upload_texture(upload)?;
         }
         self.upload_pending = Some(self.queue.submit([]));
-        #[cfg(target_arch = "wasm32")]
-        {
-            let completed = Arc::clone(&self.upload_completed);
-            completed.store(false, Ordering::Release);
-            self.queue
-                .on_submitted_work_done(move || completed.store(true, Ordering::Release));
-        }
-        self.failure.check()?;
-        Ok(true)
+        self.failure.check()
     }
 
     fn upload_texture(&mut self, upload: TextureUpload<'_>) -> Result<(), RendererError> {
@@ -244,10 +217,6 @@ impl Renderer {
 
     pub fn draw(&mut self, frame: &Frame<'_>) -> Result<Option<FrameStats>, RendererError> {
         self.failure.check()?;
-        #[cfg(target_arch = "wasm32")]
-        if !self.completed[self.next_submission].load(Ordering::Acquire) {
-            return Ok(None);
-        }
         if let Some(submission) = self.pending[self.next_submission].take() {
             self.failure.wait(&self.device, Some(submission))?;
         }
@@ -321,13 +290,6 @@ impl Renderer {
             }
         }
         self.pending[self.next_submission] = Some(self.queue.submit([encoder.finish()]));
-        #[cfg(target_arch = "wasm32")]
-        {
-            let completed = Arc::clone(&self.completed[self.next_submission]);
-            completed.store(false, Ordering::Release);
-            self.queue
-                .on_submitted_work_done(move || completed.store(true, Ordering::Release));
-        }
         self.next_submission = (self.next_submission + 1) % FRAMES_IN_FLIGHT;
         self.failure.check()?;
         self.queue.present(output);

@@ -1,9 +1,0 @@
-services:
-  web:
-    command: ./scripts/build-web --dev && exec python3 -m http.server "$PORT" --bind 0.0.0.0 --directory target/web
-    health: /game/
-    review: false
-    portal:
-      url: /game/
-      title: Game
-      description: Requires a desktop browser with WebGPU. Click Play to enable keyboard input and audio.

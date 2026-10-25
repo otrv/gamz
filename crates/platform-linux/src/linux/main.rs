@@ -264,10 +264,9 @@ fn present(
     now: Instant,
     next_stats: &mut Instant,
 ) -> Result<(), PlatformError> {
-    let uploaded = renderer
+    renderer
         .upload_textures(frame.uploads())
         .map_err(PlatformError::Renderer)?;
-    assert!(uploaded);
     window.pre_present_notify();
     if let Some(stats) = renderer
         .draw(&frame.frame)

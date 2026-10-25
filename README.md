@@ -1,7 +1,7 @@
 # gamz
 
-gamz is a Rust game engine starter project for Linux and the web. It includes
-breakout as an example game. Both platforms use the same game library.
+gamz is a Rust game engine starter project for Linux. It includes
+breakout as an example game.
 
 ## Build and run
 
@@ -29,33 +29,6 @@ cargo run -p platform-linux --features linux --bin linux --locked
 
 Use `cargo build` in place of `cargo run` to build without launching, or add
 `--release` for an optimized build.
-
-## Build for the web
-
-The web platform requires a desktop browser with WebGPU, a keyboard, and HTTPS.
-Localhost also works for development. It does not support WebGL or touch controls.
-
-Install the WebAssembly target and the matching packaging tool, then build from
-the repository root:
-
-```sh
-rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version =0.2.129 --locked
-./scripts/build-web
-```
-
-For development, run `./scripts/build-web --dev`. Both modes write to
-`target/web/game/`, so rebuild without `--dev` before publishing or measuring
-release performance.
-
-Publish the entire `target/web/game/` directory on a static web host. Keep the
-`snippets/` directory and serve `.wasm` files as `application/wasm`. The build
-needs no game server or JavaScript package manager.
-
-Keep files requested by the game in the output directory at their relative
-paths, such as `target/web/game/assets/level.bin`. Rebuilding preserves added
-files. Keep your source assets outside `target/`, because `cargo clean` removes
-that directory. Game writes stay in browser storage, not on the static host.
 
 ## Make your game
 

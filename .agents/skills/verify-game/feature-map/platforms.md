@@ -12,12 +12,4 @@ For audio changes, use a real device or clocked virtual sink and compare capture
 
 Sources: `crates/platform-linux/src/linux/{main,audio,services}.rs`, `crates/platform/src/host.rs`, and `crates/renderer/src/wgpu/`.
 
-## Web
-
-Run `./scripts/build-web` and serve `target/web/game` through the repository's portal workflow. Use a browser with WebGPU. Check affected loading or error states, Play activation, canvas focus, blur/hidden pause, Resume, resize, asynchronous file access, or audio scheduling. Inspect screenshots for pixels and recordings for interactions. A browser screenshot does not establish device playback.
-
-For file-service changes, exercise reads from IndexedDB and the fetch fallback for paths absent from IndexedDB. Writes persist in IndexedDB. Serve any task assets at their requested paths relative to the document URL; the web build does not preload an asset manifest. Check completion results and persisted bytes with an exercised path rather than treating page readiness as evidence of file access.
-
-Sources: `crates/platform-web/src/{lib.rs,services.rs,host.js}`, `crates/platform/src/host.rs`, `crates/platform-web/index.html`, and `scripts/build-web`.
-
 Keep complete platform diagnostics and relevant captures. Exercise texture, clipping, sampling, or audio paths only with suitable existing content or an explicitly authorized probe. Mark missing prerequisites and unexercised paths rather than launching unrelated hosts or claiming coverage from process survival.
