@@ -69,6 +69,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         PersistentMemory {
             bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
         },
+        transient_bytes,
         &mut services,
     )?;
     write_line(

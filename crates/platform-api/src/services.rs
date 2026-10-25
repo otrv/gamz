@@ -208,6 +208,7 @@ pub enum PlatformEvent {
 #[derive(Clone, Copy, Debug)]
 pub enum StartupError {
     InsufficientPersistentMemory { required: usize, available: usize },
+    InsufficientTransientMemory { required: usize, available: usize },
     Game { code: u32 },
 }
 
@@ -220,6 +221,13 @@ impl fmt::Display for StartupError {
             } => write!(
                 f,
                 "insufficient persistent game memory: {available} bytes available, {required} required"
+            ),
+            Self::InsufficientTransientMemory {
+                required,
+                available,
+            } => write!(
+                f,
+                "insufficient transient game memory: {available} bytes available, {required} required"
             ),
             Self::Game { code } => write!(f, "game initialization failed: {code}"),
         }

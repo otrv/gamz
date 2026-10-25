@@ -2,6 +2,8 @@
 
 mod hud;
 
+use core::mem::{align_of, size_of};
+
 use game_core::entity::{EntityId, EntityStorage};
 use game_core::font::Font;
 use game_core::render::RenderCommands;
@@ -11,13 +13,18 @@ use platform_api::audio::{AudioBuffer, StereoFrame};
 use platform_api::input::{ButtonPosition, ButtonState, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
-    Canvas, Color, Frame, FrameOutput, Point, Rect, RectStyle, RenderCommand, Size, StrokeWidth,
-    TextureId, TextureUpload,
+    Canvas, Color, Frame, FrameOutput, GlyphQuad, Point, Rect, RectStyle, RenderCommand, Size,
+    StrokeWidth, TextureId, TextureUpload,
 };
 use platform_api::services::{PlatformEvent, StartupError};
 use platform_api::{Game, Platform};
 
 const BRICK_COUNT: usize = 32;
+const MAX_RENDER_COMMANDS: usize = BRICK_COUNT + 12;
+const READY_LABEL: &str = "PRESS START";
+const PLAYING_LABEL: &str = "PLAYING";
+const WON_LABEL: &str = "YOU WON";
+const LOST_LABEL: &str = "GAME OVER";
 const BRICK_HALF: Vec2 = Vec2::new(68.0, 14.0);
 const BALL_HALF: f32 = 6.0;
 const BALL_SPEED: f32 = 420.0;
@@ -106,13 +113,31 @@ impl GameState {
 impl Game for GameState {
     fn initialize<'p>(
         memory: PersistentMemory<'p>,
+        transient_capacity: usize,
         platform: &mut impl Platform<'p>,
     ) -> Result<&'p mut Self, StartupError> {
-        let required = core::mem::size_of::<Self>() + core::mem::align_of::<Self>() - 1;
+        let required = size_of::<Self>() + align_of::<Self>() - 1;
         if memory.bytes.len() < required {
             return Err(StartupError::InsufficientPersistentMemory {
                 required,
                 available: memory.bytes.len(),
+            });
+        }
+        let max_glyphs = [READY_LABEL, PLAYING_LABEL, WON_LABEL, LOST_LABEL]
+            .into_iter()
+            .map(str::len)
+            .max()
+            .expect("the HUD has labels");
+        let required_transient = size_of::<RenderCommand<'_>>() * MAX_RENDER_COMMANDS
+            + (align_of::<RenderCommand<'_>>() - 1)
+            + size_of::<GlyphQuad>() * max_glyphs
+            + (align_of::<GlyphQuad>() - 1)
+            + size_of::<TextureUpload<'_>>()
+            + (align_of::<TextureUpload<'_>>() - 1);
+        if transient_capacity < required_transient {
+            return Err(StartupError::InsufficientTransientMemory {
+                required: required_transient,
+                available: transient_capacity,
             });
         }
         let (root, io) = memory.bytes.split_at_mut(required);
@@ -359,7 +384,7 @@ fn sweep(ball: Point, delta: Vec2, center: Point, half: Vec2) -> Option<(f32, Ve
 fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
     let TransientMemory { bytes } = memory;
     let mut arena = Arena::new(bytes);
-    let storage = arena.push_slice(BRICK_COUNT + 12, RenderCommand::SetClip(None));
+    let storage = arena.push_slice(MAX_RENDER_COMMANDS, RenderCommand::SetClip(None));
     let mut commands = RenderCommands::new(storage);
     draw_court(state, &mut commands);
     let (ball, status) = match state.phase {
@@ -401,10 +426,10 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
         ),
     };
     let label = match state.phase {
-        Phase::Ready => "PRESS START",
-        Phase::Playing { .. } => "PLAYING",
-        Phase::Won => "YOU WON",
-        Phase::Lost => "GAME OVER",
+        Phase::Ready => READY_LABEL,
+        Phase::Playing { .. } => PLAYING_LABEL,
+        Phase::Won => WON_LABEL,
+        Phase::Lost => LOST_LABEL,
     };
     hud::draw(&state.font, label, status, &mut arena, &mut commands)
         .expect("frame command budget includes the HUD");

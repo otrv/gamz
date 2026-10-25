@@ -165,6 +165,7 @@ fn run() -> Result<(), PlatformError> {
         PersistentMemory {
             bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
         },
+        transient_bytes.len(),
         &mut services,
     )
     .map_err(PlatformError::Startup)?;

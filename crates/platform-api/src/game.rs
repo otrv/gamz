@@ -8,6 +8,7 @@ use crate::services::StartupError;
 pub trait Game: Sized {
     fn initialize<'p>(
         memory: PersistentMemory<'p>,
+        transient_capacity: usize,
         platform: &mut impl Platform<'p>,
     ) -> Result<&'p mut Self, StartupError>;
 
