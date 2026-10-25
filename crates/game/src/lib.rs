@@ -1,6 +1,9 @@
 #![no_std]
 
+mod hud;
+
 use game_core::entity::{EntityId, EntityStorage};
+use game_core::font::Font;
 use game_core::math::{Vec2, Vec2x4};
 use game_core::render::RenderCommands;
 use game_memory::Arena;
@@ -10,6 +13,7 @@ use platform_api::math::Radians;
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
     Canvas, Color, Frame, FrameOutput, Point, Rect, RectStyle, RenderCommand, Size, StrokeWidth,
+    TextureId, TextureUpload,
 };
 use platform_api::services::{PlatformEvent, StartupError};
 use platform_api::{Game, Platform};
@@ -41,6 +45,8 @@ enum Phase {
 
 pub struct GameState {
     bricks: EntityStorage<Brick, BRICK_COUNT>,
+    font: Font,
+    font_uploaded: bool,
     paddle: Point,
     phase: Phase,
     lives: u8,
@@ -115,6 +121,8 @@ impl Game for GameState {
         platform.set_persistent_memory(Arena::new(io).push_slice(capacity, 0_u8));
         let mut state = Self {
             bricks: EntityStorage::new(),
+            font: hud::font().map_err(|_| StartupError::Game { code: 1 })?,
+            font_uploaded: false,
             paddle: Point::new(640.0, PADDLE_Y),
             phase: Phase::Ready,
             lives: 3,
@@ -153,7 +161,9 @@ impl Game for GameState {
                 advance(self, dt);
             }
         }
-        FrameOutput::new(draw(self, memory), &[])
+        let output = draw(self, memory);
+        self.font_uploaded = true;
+        output
     }
 
     fn update_audio<'p>(&mut self, _platform: &mut impl Platform<'p>, mut buffer: AudioBuffer<'_>) {
@@ -347,11 +357,11 @@ fn sweep(ball: Point, delta: Vec2, center: Point, half: Vec2) -> Option<(f32, Ve
     (normal.dot(delta) < 0.0).then_some((entry, normal))
 }
 
-fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
+fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
     let TransientMemory { bytes } = memory;
     let mut arena = Arena::new(bytes);
     let storage = arena.push_slice(BRICK_COUNT + 12, RenderCommand::SetClip(None));
-    let mut commands = RenderCommands::new(storage, &mut []);
+    let mut commands = RenderCommands::new(storage);
     draw_court(state, &mut commands);
     let (ball, status) = match state.phase {
         Phase::Ready => (
@@ -391,12 +401,14 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
             },
         ),
     };
-    rect(
-        &mut commands,
-        Point::new(608.0, 28.0),
-        Size::new(64.0, 8.0),
-        status,
-    );
+    let label = match state.phase {
+        Phase::Ready => "PRESS START",
+        Phase::Playing { .. } => "PLAYING",
+        Phase::Won => "YOU WON",
+        Phase::Lost => "GAME OVER",
+    };
+    hud::draw(&state.font, label, status, &mut arena, &mut commands)
+        .expect("frame command budget includes the HUD");
     if let Some(ball) = ball {
         rect(
             &mut commands,
@@ -406,12 +418,14 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
         );
         if matches!(state.phase, Phase::Ready) {
             let aim = Vec2::new(0.0, -48.0).rotate(Radians::new(0.35));
-            commands.push(RenderCommand::DrawLine {
-                start: ball,
-                end: point(Vec2::new(ball.x(), ball.y()) + aim),
-                width: StrokeWidth::new(2.0),
-                color: status,
-            });
+            commands
+                .push(RenderCommand::DrawLine {
+                    start: ball,
+                    end: point(Vec2::new(ball.x(), ball.y()) + aim),
+                    width: StrokeWidth::new(2.0),
+                    color: status,
+                })
+                .expect("frame command budget includes the aim line");
         }
     } else {
         rect(
@@ -421,7 +435,7 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
             status,
         );
     }
-    Frame::new(
+    let frame = Frame::new(
         Canvas::new(1280, 720),
         Color {
             red: 16,
@@ -430,7 +444,19 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
             alpha: 255,
         },
         commands.finish(),
-    )
+    );
+    let uploads = if state.font_uploaded {
+        &[][..]
+    } else {
+        &arena.push_slice(
+            1,
+            TextureUpload {
+                id: TextureId::new(0),
+                image: hud::image(),
+            },
+        )[..]
+    };
+    FrameOutput::new(frame, uploads)
 }
 
 fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) {
@@ -485,10 +511,12 @@ fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) {
 }
 
 fn rect(commands: &mut RenderCommands<'_>, origin: Point, size: Size, color: Color) {
-    commands.push(RenderCommand::DrawRect {
-        rect: Rect::new(origin, size),
-        style: RectStyle::Filled(color),
-    });
+    commands
+        .push(RenderCommand::DrawRect {
+            rect: Rect::new(origin, size),
+            style: RectStyle::Filled(color),
+        })
+        .expect("frame command budget includes court rectangles");
 }
 
 fn point(value: Vec2) -> Point {

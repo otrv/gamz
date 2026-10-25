@@ -12,14 +12,20 @@ pub struct Point {
     y: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidPoint;
+
 impl Point {
     #[must_use]
     pub fn new(x: f32, y: f32) -> Self {
-        assert!(x.is_finite());
-        assert!(y.is_finite());
-        assert!(x.abs() <= 1.0e12);
-        assert!(y.abs() <= 1.0e12);
-        Self { x, y }
+        Self::try_new(x, y).expect("point coordinates must be finite and within bounds")
+    }
+
+    pub fn try_new(x: f32, y: f32) -> Result<Self, InvalidPoint> {
+        if !(-1.0e12..=1.0e12).contains(&x) || !(-1.0e12..=1.0e12).contains(&y) {
+            return Err(InvalidPoint);
+        }
+        Ok(Self { x, y })
     }
 
     #[must_use]
@@ -323,6 +329,26 @@ pub enum RenderCommand<'a> {
     DrawText(Text<'a>),
 }
 
+impl RenderCommand<'_> {
+    #[must_use]
+    pub fn quad_count(self) -> usize {
+        match self {
+            Self::SetCamera(_) | Self::SetClip(_) => 0,
+            Self::DrawRect {
+                style: RectStyle::Outline { .. },
+                ..
+            } => 4,
+            Self::DrawText(text) => text.glyphs().len(),
+            Self::DrawSprite(_)
+            | Self::DrawRect {
+                style: RectStyle::Filled(_),
+                ..
+            }
+            | Self::DrawLine { .. } => 1,
+        }
+    }
+}
+
 pub struct Frame<'a> {
     pub canvas: Canvas,
     pub clear: Color,
@@ -335,20 +361,7 @@ impl<'a> Frame<'a> {
         assert!(commands.len() <= MAX_COMMANDS);
         let mut quads = 0;
         for command in commands {
-            quads += match command {
-                RenderCommand::SetCamera(_) | RenderCommand::SetClip(_) => 0,
-                RenderCommand::DrawRect {
-                    style: RectStyle::Outline { .. },
-                    ..
-                } => 4,
-                RenderCommand::DrawText(text) => text.glyphs().len(),
-                RenderCommand::DrawSprite(_)
-                | RenderCommand::DrawRect {
-                    style: RectStyle::Filled(_),
-                    ..
-                }
-                | RenderCommand::DrawLine { .. } => 1,
-            };
+            quads += command.quad_count();
             assert!(quads <= MAX_QUADS);
         }
         Self {

@@ -42,7 +42,7 @@ mod baked;
 ```
 
 Read an asset inside a function that propagates
-`game_core::asset::AssetError`:
+`game_core::asset::PackError`:
 
 ```rust
 let pack = baked::EmbeddedPack::from_bytes(baked::PACK_BYTES)?;

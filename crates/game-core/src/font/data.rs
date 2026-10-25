@@ -1,26 +1,25 @@
-use super::AssetError;
-use crate::font::Font;
-use platform_api::render::{Image, PixelRect, TextureId};
+use super::FontError;
+use platform_api::render::{Image, PixelRect};
 
 const GLYPHS: usize = 95;
 const MAX_KERNING_PAIRS: usize = 1024;
 pub const MAX_FONT_FILE_BYTES: usize = 10 + GLYPHS * 14 + MAX_KERNING_PAIRS * 4;
 
 #[derive(Clone, Copy)]
-pub(crate) struct Glyph {
-    pub(crate) source: PixelRect,
-    pub(crate) offset_x: i16,
-    pub(crate) offset_y: i16,
-    pub(crate) advance: u16,
+pub(super) struct Glyph {
+    pub(super) source: PixelRect,
+    pub(super) offset_x: i16,
+    pub(super) offset_y: i16,
+    pub(super) advance: u16,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct Kerning {
-    pub(crate) pair: u16,
-    pub(crate) adjustment: i16,
+pub(super) struct Kerning {
+    pub(super) pair: u16,
+    pub(super) adjustment: i16,
 }
 
-pub(crate) struct FontData {
+pub(super) struct FontData {
     line_height: u16,
     glyphs: [Glyph; GLYPHS],
     kerning: [Kerning; MAX_KERNING_PAIRS],
@@ -28,22 +27,22 @@ pub(crate) struct FontData {
 }
 
 impl FontData {
-    pub(crate) fn line_height(&self) -> u16 {
+    pub(super) fn line_height(&self) -> u16 {
         self.line_height
     }
 
-    pub(crate) fn glyphs(&self) -> &[Glyph; GLYPHS] {
+    pub(super) fn glyphs(&self) -> &[Glyph; GLYPHS] {
         &self.glyphs
     }
 
-    pub(crate) fn kerning(&self) -> &[Kerning] {
+    pub(super) fn kerning(&self) -> &[Kerning] {
         &self.kerning[..usize::from(self.kerning_count)]
     }
 }
 
-pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<Font, AssetError> {
+pub(super) fn read_font(bytes: &[u8], atlas: Image<'_>) -> Result<FontData, FontError> {
     if bytes.len() < 10 || &bytes[..4] != b"GFN1" {
-        return Err(AssetError::InvalidFont);
+        return Err(FontError::InvalidData);
     }
     let line_height = word(bytes, 4);
     let kerning_count = word(bytes, 8);
@@ -53,7 +52,7 @@ pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<F
         || usize::from(kerning_count) > MAX_KERNING_PAIRS
         || bytes.len() != 10 + GLYPHS * 14 + usize::from(kerning_count) * 4
     {
-        return Err(AssetError::InvalidFont);
+        return Err(FontError::InvalidData);
     }
     let empty = Glyph {
         source: PixelRect::new(0, 0, 0, 0),
@@ -85,7 +84,7 @@ pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<F
             || offset_x.unsigned_abs() > 1024
             || offset_y.unsigned_abs() > 1024
         {
-            return Err(AssetError::InvalidFont);
+            return Err(FontError::InvalidData);
         }
         *glyph = Glyph {
             source: PixelRect::new(x, y, width, height),
@@ -104,7 +103,7 @@ pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<F
         if usize::from(pair) >= GLYPHS * GLYPHS
             || previous_pair.is_some_and(|previous| pair <= previous)
         {
-            return Err(AssetError::InvalidFont);
+            return Err(FontError::InvalidData);
         }
         *kerning = Kerning {
             pair,
@@ -112,7 +111,7 @@ pub fn read_font(bytes: &[u8], texture: TextureId, atlas: Image<'_>) -> Result<F
         };
         previous_pair = Some(pair);
     }
-    Ok(Font::new(texture, data))
+    Ok(data)
 }
 
 fn word(bytes: &[u8], offset: usize) -> u16 {
