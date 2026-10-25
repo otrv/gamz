@@ -21,6 +21,12 @@ mechanisms' invariants.
 
 Keep dependencies directed from consumers to the mechanisms they use.
 
+Keep `game-core` utility modules independent of sibling utilities. Compose them
+in `game` and keep each mechanism's representation private to its module.
+Judge API simplicity by independent responsibilities and explicit storage,
+failure, and work costs, not by the number of caller statements. Assess proposed
+APIs with a complete arena-backed usage example before implementation.
+
 `platform-api` contains shared contracts and their validation. It contains no
 game selection, game mechanisms, or backend implementations. Boundary signatures
 use its types and an opaque game-owned state root. Hosts link `game` directly.
