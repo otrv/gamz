@@ -1,6 +1,6 @@
 use core::ops::{Add, Mul, Sub};
 use glam::{DVec4, Vec4};
-use platform_api::render::Radians;
+use platform_api::math::Radians;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2 {
@@ -213,7 +213,7 @@ impl Mul<[f32; 4]> for Vec2x4 {
 mod tests {
     use super::{NormalizeError, Vec2, Vec2x4};
     use core::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, PI};
-    use platform_api::render::Radians;
+    use platform_api::math::Radians;
 
     fn close(actual: f32, expected: f32) {
         assert!(
@@ -400,5 +400,26 @@ mod tests {
             Vec2::new(1.0, 0.0).rotate(Radians::new(FRAC_PI_4)),
             Vec2::new(FRAC_1_SQRT_2, FRAC_1_SQRT_2),
         );
+
+        let values = [
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, -1.0),
+        ];
+        let raw_angles = [1.0e8, -1.0e8, f32::MAX, -f32::MAX];
+        let angles = raw_angles.map(Radians::new);
+        let expected = [
+            Vec2::new(-0.363_385_08, 0.931_639),
+            Vec2::new(0.931_639, -0.363_385_08),
+            Vec2::new(0.853_021, -0.521_876_5),
+            Vec2::new(0.521_876_5, -0.853_021),
+        ];
+        let rotated = Vec2x4::from_array(values).rotate(angles).to_array();
+        for lane in 0..4 {
+            assert_eq!(angles[lane].get().to_bits(), raw_angles[lane].to_bits());
+            vector_close(rotated[lane], expected[lane]);
+            vector_close(values[lane].rotate(angles[lane]), expected[lane]);
+        }
     }
 }

@@ -1,7 +1,6 @@
 use crate::asset::font::FontData;
-use platform_api::render::{
-    GlyphQuad, PixelRect, Point, Radians, Scale, Size, TextureId, Transform,
-};
+use platform_api::math::Radians;
+use platform_api::render::{GlyphQuad, PixelRect, Point, Scale, Size, TextureId, Transform};
 
 const FIRST: u8 = b' ';
 pub const MAX_TEXT_BYTES: usize = 4096;

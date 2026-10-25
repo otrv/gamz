@@ -6,10 +6,10 @@ use game_core::render::RenderCommands;
 use game_memory::Arena;
 use platform_api::audio::{AudioBuffer, StereoFrame};
 use platform_api::input::{ButtonPosition, ButtonState, FrameInput};
+use platform_api::math::Radians;
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
-    Canvas, Color, Frame, FrameOutput, Point, Radians, Rect, RectStyle, RenderCommand, Size,
-    StrokeWidth,
+    Canvas, Color, Frame, FrameOutput, Point, Rect, RectStyle, RenderCommand, Size, StrokeWidth,
 };
 use platform_api::services::{PlatformEvent, StartupError};
 use platform_api::{Game, Platform};
