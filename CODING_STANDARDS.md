@@ -14,40 +14,29 @@ preferences. Do not rename APIs or reorganize crates solely for a preference.
 
 ### Architecture and memory
 
-The platform owns execution, external access, and game-memory bytes. It never
-interprets those bytes or implements game-side mechanisms. The game owns memory
-layout, initialization, meaning, and game rules. `game-core` owns its reusable
-mechanisms' invariants.
+#### Layer ownership
 
-Keep dependencies directed from consumers to the mechanisms they use.
+Choose the owner by the responsibility, not by how many callers use it.
+Keep dependencies directed from consumers to the mechanisms they use. A type's
+presence in a boundary signature does not make its implementation a contract
+responsibility.
+
+| Owner | Add here | Keep elsewhere |
+| --- | --- | --- |
+| `game` | Game rules, persistent state layout and initialization, assets, build code, and utility composition. | Reusable mechanisms belong in `game-core`. OS access belongs in the platform. |
+| `game-core` | Mechanisms extracted from concrete game use, with game-independent semantics and private representations. Each utility owns its invariants. | Game selection and composition belong in `game`. Mathematical operations belong in `math`. |
+| `game-memory` | Arenas and byte-to-typed-storage operations under the unsafe-code rules. | The game chooses its layout. The platform supplies the bytes. |
+| `math` | Mathematical value types and operations independent of game and platform crates. | Shared render-value constraints belong in `platform-api`. Game rules belong in `game`. |
+| `platform-api` | The `Game` and `Platform` contracts, boundary values and errors, and validity checks on those values. | Game selection, game mechanisms, runtime bookkeeping, and backend implementations belong to their implementation owners. |
+| `platform-<os>`, currently `platform-linux` | Target execution, memory bytes, external services, request tracking, and target-specific libraries. | Game-memory interpretation belongs in `game`. GPU backend work belongs in `renderer` when the platform uses it. |
+| `renderer` | GPU resources, command execution, and backend-specific rendering checks. | Command contracts belong in `platform-api`. Game-side command construction belongs in `game-core`. |
+| `asset-packer` | Standalone, standard-library-only build tooling that writes packs and generated asset IDs. | Runtime pack reading belongs in `game-core`. Game assets and build integration belong in `game`. |
 
 Keep `game-core` utility modules independent of sibling utilities. Compose them
 in `game` and keep each mechanism's representation private to its module.
 Judge API simplicity by independent responsibilities and explicit storage,
 failure, and work costs, not by the number of caller statements. Assess proposed
 APIs with a complete arena-backed usage example before implementation.
-
-`platform-api` contains shared contracts and their validation. It contains no
-game selection, game mechanisms, or backend implementations. Boundary signatures
-use its types, shared `math` value types, and an opaque game-owned state root.
-`math` owns mathematical types and operations independently of game and platform
-crates. Hosts link `game` directly.
-Keep platform and third-party library types out of game-side interfaces,
-including nested types and errors. Keep target-specific code and libraries
-inside the platform module for that target.
-
-The platform supplies bounded persistent and transient byte regions. Game-side
-code constructs arenas over them. Long-lived state stays in the persistent root.
-Frame scratch resets together. Persistent game memory holds values, indices,
-handles, and offsets, never references or pointers. Its contents must remain
-valid when game code reloads.
-
-Game-side crates are `platform-api`, `game-core`, `game-memory`, `math`, and `game`.
-They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have
-runtime dependencies that use neither. Check transitive dependencies and enabled
-features when versions or features change.
-Host-only build dependencies may use both. Host allocation does not authorize
-game-side heap allocation or per-frame allocation in hot paths.
 
 Extract mechanisms into `game-core` only from concrete game use and with
 game-independent semantics. Retain extracted mechanisms after their original
@@ -59,8 +48,45 @@ change. Demonstrate it through normal execution, not unused imports, no-effect
 calls, or tests alone. Name the runtime path and observed behavior that depends
 on the capability.
 
-Keep game logic, assets, and build code in `crates/game`. Keep the shared game
-interface in `platform-api::Game`. Do not add parallel interfaces.
+Each platform implements `platform_api::Platform` directly and links `game`
+directly. Keep platform implementation state in that platform's crate. Share
+concrete modules within a platform when useful, rather than requiring a shared
+host wrapper or another backend interface. Each platform chooses whether to
+provide desktop or CLI executables. Sharing a contract does not require matching
+feature sets, resource policies, scheduling, or backend-specific validation.
+Every implementation must still honor the explicit contract guarantees.
+
+Keep validity checks on boundary values in `platform-api`. Keep checks that
+depend on runtime history, device capabilities, or OS resources in the platform
+or renderer that owns them. For example, image dimensions and byte length are
+value validity; whether a texture is resident depends on renderer state.
+Different outcomes across platforms are defects only when they violate a shared
+contract. CLI success does not establish renderer validity.
+
+Keep the shared game interface in `platform-api::Game`. Do not add parallel
+interfaces. Boundary signatures use `platform-api` types, shared `math` value
+types, and an opaque game-owned state root. Keep platform and third-party library
+types out of game-side interfaces, including nested types and errors. Keep
+target-specific code and libraries inside the platform module for that target.
+
+#### Memory ownership
+
+The platform supplies bounded persistent and transient byte regions. Game-side
+code constructs arenas over them. The game determines its required capacities
+and rejects insufficient capacity during initialization. The platform supplies
+the available capacities and handles startup errors without interpreting game
+layout. Each frame must supply at least the transient capacity accepted at
+initialization. Long-lived state stays in the persistent root.
+Frame scratch resets together. Persistent game memory holds values, indices,
+handles, and offsets, never references or pointers. Its contents must remain
+valid when game code reloads.
+
+Game-side crates are `platform-api`, `game-core`, `game-memory`, `math`, and `game`.
+They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have
+runtime dependencies that use neither. Check transitive dependencies and enabled
+features when versions or features change.
+Host-only build dependencies may use both. Host allocation does not authorize
+game-side heap allocation or per-frame allocation in hot paths.
 
 ### Types and representation
 
