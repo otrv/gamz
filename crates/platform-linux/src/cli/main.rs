@@ -11,7 +11,6 @@ mod services;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::process::ExitCode;
 
-use platform::Host;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
 use platform_api::input::FrameInput;
@@ -66,12 +65,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     audio.resize(MAX_AUDIO_FRAMES, StereoFrame::default());
     let mut output = BufWriter::new(io::stdout().lock());
     let mut services = Services::new();
-    let mut platform = Host::new(&mut services);
     let state = game::GameState::initialize(
         PersistentMemory {
             bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
         },
-        &mut platform,
+        &mut services,
     )?;
     write_line(
         &mut output,
@@ -83,7 +81,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = BufReader::new(io::stdin().lock());
     let mut line = Vec::with_capacity(MAX_INPUT_BYTES + 1);
     let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
-    while !platform.backend().exit_requested() {
+    while !services.exit_requested() {
         line.clear();
         let count = input
             .by_ref()
@@ -102,18 +100,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 close_requested,
             } => {
                 if close_requested {
-                    platform.backend_mut().request_close();
+                    services.request_close();
                 }
-                apply_window_requests(platform.backend_mut());
-                let count = platform.poll_events(&mut events);
-                let input = FrameInput::new(
-                    dt,
-                    controller,
-                    platform.backend().window_state(),
-                    &events[..count],
-                );
+                apply_window_requests(&mut services);
+                let count = services.poll_events(&mut events);
+                let input =
+                    FrameInput::new(dt, controller, services.window_state(), &events[..count]);
                 let frame = state.update(
-                    &mut platform,
+                    &mut services,
                     TransientMemory {
                         bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
                     },
@@ -126,7 +120,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 frames,
             } => {
                 let frames = &mut audio[..frames];
-                state.update_audio(&mut platform, AudioBuffer::new(sample_rate, frames));
+                state.update_audio(&mut services, AudioBuffer::new(sample_rate, frames));
                 write_line(
                     &mut output,
                     &AudioOutput {
@@ -140,7 +134,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn apply_window_requests(services: &mut Services) {
+fn apply_window_requests(services: &mut Services<'_>) {
     for _ in 0..MAX_REQUESTS {
         let Some((id, change)) = services.take_window_request() else {
             break;

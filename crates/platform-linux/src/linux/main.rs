@@ -12,7 +12,6 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use platform::Host;
 use platform_api::Game;
 use platform_api::input::{ButtonPosition, ButtonState, ControllerInput, FrameInput};
 use platform_api::memory::{PersistentMemory, TransientMemory};
@@ -162,25 +161,24 @@ fn run() -> Result<(), PlatformError> {
         pollster::block_on(Renderer::new(Arc::clone(window), size.width, size.height))
             .map_err(PlatformError::Renderer)?;
     let mut services = Services::new();
-    let mut boundary = Host::new(&mut services);
     let state = game::GameState::initialize(
         PersistentMemory {
             bytes: &mut persistent.spare_capacity_mut()[..PERSISTENT_MEMORY_BYTES],
         },
-        &mut boundary,
+        &mut services,
     )
     .map_err(PlatformError::Startup)?;
-    if boundary.backend().exit_requested() {
+    if services.exit_requested() {
         return Ok(());
     }
-    let mut audio = Audio::start(state, &mut boundary).map_err(PlatformError::Audio)?;
+    let mut audio = Audio::start(state, &mut services).map_err(PlatformError::Audio)?;
     let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
     let frame_interval =
         Duration::from_nanos(1_000_000_000_u64.div_ceil(u64::from(MAX_FRAMES_PER_SECOND.get())));
     let mut previous_frame = Instant::now();
     let mut next_frame = previous_frame + frame_interval;
     let mut next_stats = next_frame;
-    while !boundary.backend().exit_requested() {
+    while !services.exit_requested() {
         let timeout = next_frame.saturating_duration_since(Instant::now());
         if let PumpStatus::Exit(code) = event_loop.pump_app_events(Some(timeout), &mut platform) {
             return exit_result(platform.window, code);
@@ -188,11 +186,7 @@ fn run() -> Result<(), PlatformError> {
         let WindowState::Open(window) = &platform.window else {
             continue;
         };
-        apply_window_requests(
-            boundary.backend_mut(),
-            window,
-            &mut platform.window_requests,
-        );
+        apply_window_requests(&mut services, window, &mut platform.window_requests);
         if Instant::now() < next_frame {
             continue;
         }
@@ -209,29 +203,24 @@ fn run() -> Result<(), PlatformError> {
         previous_frame = now;
         platform.controller.start_frame();
         if core::mem::take(&mut platform.close_requested) {
-            boundary.backend_mut().request_close();
+            services.request_close();
         }
-        let count = boundary.poll_events(&mut events);
-        let input = FrameInput::new(
-            dt,
-            controller,
-            boundary.backend().window_state(),
-            &events[..count],
-        );
+        let count = services.poll_events(&mut events);
+        let input = FrameInput::new(dt, controller, services.window_state(), &events[..count]);
         let frame = state.update(
-            &mut boundary,
+            &mut services,
             TransientMemory {
                 bytes: transient_bytes,
             },
             &input,
         );
-        if boundary.backend().exit_requested() {
+        if services.exit_requested() {
             return Ok(());
         }
         audio
-            .update(state, &mut boundary)
+            .update(state, &mut services)
             .map_err(|error| PlatformError::Audio(error.into()))?;
-        if boundary.backend().exit_requested() {
+        if services.exit_requested() {
             return Ok(());
         }
         present(&mut renderer, window, &frame, now, &mut next_stats)?;
@@ -283,7 +272,7 @@ fn present(
 }
 
 fn apply_window_requests(
-    services: &mut Services,
+    services: &mut Services<'_>,
     window: &Window,
     pending: &mut [Option<WindowRequest>; MAX_REQUESTS],
 ) {

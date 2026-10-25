@@ -2,7 +2,6 @@ use std::ops::Range;
 
 use alsa::pcm::{Access, Format, Frames, HwParams, PCM, State};
 use alsa::{Direction, ValueOr};
-use platform::Host;
 use platform_api::Game;
 use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, SampleRate, StereoFrame};
 use rustix::io::Errno;
@@ -24,7 +23,7 @@ pub(super) struct Audio {
 impl Audio {
     pub(super) fn start(
         state: &mut impl Game,
-        platform: &mut Host<'_, Services>,
+        platform: &mut Services<'_>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let pcm = PCM::open(c"default", Direction::Playback, true)?;
         let (sample_rate, target, device_frames) = {
@@ -77,7 +76,7 @@ impl Audio {
     pub(super) fn update(
         &mut self,
         state: &mut impl Game,
-        platform: &mut Host<'_, Services>,
+        platform: &mut Services<'_>,
     ) -> alsa::Result<()> {
         match self.fill(state, platform) {
             Err(error) if error.errno() == Errno::PIPE.raw_os_error() => {
@@ -89,11 +88,7 @@ impl Audio {
         }
     }
 
-    fn fill(
-        &mut self,
-        state: &mut impl Game,
-        platform: &mut Host<'_, Services>,
-    ) -> alsa::Result<()> {
+    fn fill(&mut self, state: &mut impl Game, platform: &mut Services<'_>) -> alsa::Result<()> {
         if !self.pending.is_empty() {
             self.write_pending()?;
             if !self.pending.is_empty() {
@@ -115,7 +110,7 @@ impl Audio {
         }
         let frames = &mut self.frames[..requested];
         state.update_audio(platform, AudioBuffer::new(self.sample_rate, frames));
-        if platform.backend().exit_requested() {
+        if platform.exit_requested() {
             return Ok(());
         }
         let encoded_frames = frames

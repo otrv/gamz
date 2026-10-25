@@ -8,11 +8,12 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex, TryLockError};
 use std::thread::{self, JoinHandle};
 
-use platform::Backend;
+use platform_api::Platform;
+use platform_api::memory::MemoryRange;
 use platform_api::services::{
-    CancelStatus, FileError, FilePath, IoStatus, MAX_FILE_BYTES, MAX_IO_BYTES, MAX_REQUESTS,
-    PlatformEvent, ReadRequest, RequestError, RequestId, WindowChange, WindowState, WindowStatus,
-    WriteMode, WriteRequest,
+    CancelStatus, FileError, FilePath, IoStatus, MAX_EVENTS, MAX_FILE_BYTES, MAX_IO_BYTES,
+    MAX_REQUESTS, PlatformEvent, ReadRequest, RequestError, RequestId, WindowChange, WindowState,
+    WindowStatus, WriteMode, WriteRequest,
 };
 use rustix::fs::{AtFlags, FileType, Mode, OFlags};
 
@@ -40,6 +41,7 @@ enum Slot {
     Io {
         id: RequestId,
         kind: IoKind,
+        range: MemoryRange,
     },
     Window {
         id: RequestId,
@@ -89,17 +91,19 @@ struct Worker {
     progress: [AtomicU8; MAX_REQUESTS],
 }
 
-pub(crate) struct Services {
+pub(crate) struct Services<'p> {
     worker: Arc<Worker>,
     thread: Option<JoinHandle<()>>,
     buffers: [Option<Vec<u8>>; MAX_REQUESTS],
     slots: [Slot; MAX_REQUESTS],
+    persistent: &'p mut [u8],
+    next_request: u64,
     window: WindowState,
     close_requested: bool,
     exit_requested: bool,
 }
 
-impl Services {
+impl Services<'_> {
     pub(crate) fn new() -> Self {
         let worker = Arc::new(Worker {
             queue: Mutex::new(Queue {
@@ -118,6 +122,8 @@ impl Services {
             thread: Some(thread),
             buffers,
             slots: array::from_fn(|_| Slot::Idle),
+            persistent: &mut [],
+            next_request: 1,
             window: WindowState::default(),
             close_requested: false,
             exit_requested: false,
@@ -173,26 +179,63 @@ impl Services {
         self.exit_requested
     }
 
-    fn available_slot(&self, id: RequestId) -> Result<usize, RequestError> {
-        if self.slots.iter().any(|slot| match slot {
-            Slot::Io { id: pending, .. } | Slot::Window { id: pending, .. } => *pending == id,
-            Slot::Idle => false,
-        }) {
-            return Err(RequestError::InvalidValue);
-        }
-        self.slots
+    fn next_slot(&mut self) -> Result<(usize, RequestId), RequestError> {
+        let slot = self
+            .slots
             .iter()
             .position(|slot| matches!(slot, Slot::Idle))
-            .ok_or(RequestError::QueueFull)
+            .ok_or(RequestError::QueueFull)?;
+        let id = RequestId::new(self.next_request);
+        self.next_request = self
+            .next_request
+            .checked_add(1)
+            .ok_or(RequestError::QueueFull)?;
+        Ok((slot, id))
+    }
+
+    fn check_range(&self, range: MemoryRange) -> Result<(), RequestError> {
+        if range
+            .offset
+            .checked_add(range.len)
+            .is_none_or(|end| end > self.persistent.len())
+        {
+            return Err(RequestError::InvalidRange);
+        }
+        Ok(())
+    }
+
+    fn check_available(&self, range: MemoryRange) -> Result<(), RequestError> {
+        self.check_range(range)?;
+        for slot in &self.slots {
+            if let Slot::Io {
+                range: reserved, ..
+            } = slot
+                && overlaps(range, *reserved)
+            {
+                return Err(RequestError::MemoryBusy);
+            }
+        }
+        Ok(())
+    }
+
+    fn check_io_range(&self, range: MemoryRange, offset: u64) -> Result<(), RequestError> {
+        if range.len > MAX_IO_BYTES {
+            return Err(RequestError::InvalidRange);
+        }
+        self.check_available(range)?;
+        offset
+            .checked_add(u64::try_from(range.len).map_err(|_| RequestError::InvalidRange)?)
+            .filter(|&end| end <= MAX_FILE_BYTES)
+            .ok_or(RequestError::InvalidRange)?;
+        Ok(())
     }
 
     fn submit(
         &mut self,
-        id: RequestId,
         operation: Operation,
-        bytes: &[u8],
-    ) -> Result<(), RequestError> {
-        let slot = self.available_slot(id)?;
+        range: MemoryRange,
+    ) -> Result<RequestId, RequestError> {
+        let (slot, id) = self.next_slot()?;
         let kind = match operation {
             Operation::Read { .. } => IoKind::Read,
             Operation::Write { .. } => IoKind::Write,
@@ -210,9 +253,12 @@ impl Services {
         let mut buffer = self.buffers[slot]
             .take()
             .expect("idle slot retains its staging buffer");
-        buffer[..bytes.len()].copy_from_slice(bytes);
+        if let IoKind::Write = kind {
+            buffer[..range.len]
+                .copy_from_slice(&self.persistent[range.offset..range.offset + range.len]);
+        }
         self.worker.progress[slot].store(ACTIVE, Ordering::Release);
-        self.slots[slot] = Slot::Io { id, kind };
+        self.slots[slot] = Slot::Io { id, kind, range };
         queue.pending.push_back(Job {
             slot,
             id,
@@ -221,46 +267,67 @@ impl Services {
         });
         drop(queue);
         self.worker.wake.notify_one();
-        Ok(())
+        Ok(id)
     }
 }
 
-impl Backend for Services {
-    fn request_read(&mut self, id: RequestId, request: &ReadRequest) -> Result<(), RequestError> {
-        validate_io_range(request.offset, request.destination.len)?;
+impl<'p> Platform<'p> for Services<'p> {
+    fn set_persistent_memory(&mut self, bytes: &'p mut [u8]) {
+        assert!(self.persistent.is_empty(), "I/O memory is bound only once");
+        assert!(self.slots.iter().all(|slot| matches!(slot, Slot::Idle)));
+        self.persistent = bytes;
+    }
+
+    fn persistent_capacity(&self) -> usize {
+        self.persistent.len()
+    }
+
+    fn memory(&self, range: MemoryRange) -> Result<&[u8], RequestError> {
+        self.check_range(range)?;
+        for slot in &self.slots {
+            if let Slot::Io {
+                kind: IoKind::Read,
+                range: reserved,
+                ..
+            } = slot
+                && overlaps(range, *reserved)
+            {
+                return Err(RequestError::MemoryBusy);
+            }
+        }
+        Ok(&self.persistent[range.offset..range.offset + range.len])
+    }
+
+    fn memory_mut(&mut self, range: MemoryRange) -> Result<&mut [u8], RequestError> {
+        self.check_available(range)?;
+        Ok(&mut self.persistent[range.offset..range.offset + range.len])
+    }
+
+    fn request_read(&mut self, request: &ReadRequest) -> Result<RequestId, RequestError> {
+        self.check_io_range(request.destination, request.offset)?;
         self.submit(
-            id,
             Operation::Read {
                 path: request.path,
                 offset: request.offset,
                 len: request.destination.len,
             },
-            &[],
+            request.destination,
         )
     }
 
-    fn request_write(
-        &mut self,
-        id: RequestId,
-        request: &WriteRequest,
-        bytes: &[u8],
-    ) -> Result<(), RequestError> {
-        if bytes.len() != request.source.len {
-            return Err(RequestError::InvalidRange);
-        }
+    fn request_write(&mut self, request: &WriteRequest) -> Result<RequestId, RequestError> {
         let offset = match request.mode {
             WriteMode::Replace => 0,
             WriteMode::AtOffset(offset) => offset,
         };
-        validate_io_range(offset, bytes.len())?;
+        self.check_io_range(request.source, offset)?;
         self.submit(
-            id,
             Operation::Write {
                 path: request.path,
                 mode: request.mode,
-                len: bytes.len(),
+                len: request.source.len,
             },
-            bytes,
+            request.source,
         )
     }
 
@@ -298,39 +365,53 @@ impl Backend for Services {
         CancelStatus::UnknownRequest
     }
 
-    fn request_window_change(
-        &mut self,
-        id: RequestId,
-        change: WindowChange,
-    ) -> Result<(), RequestError> {
+    fn request_window_change(&mut self, change: WindowChange) -> Result<RequestId, RequestError> {
         if let WindowChange::Size { width, height } = change
-            && (width == 0 || height == 0)
+            && (!(1..=16_384).contains(&width) || !(1..=16_384).contains(&height))
         {
             return Err(RequestError::InvalidValue);
         }
-        let slot = self.available_slot(id)?;
+        let (slot, id) = self.next_slot()?;
         self.slots[slot] = Slot::Window {
             id,
             progress: WindowProgress::Queued(change),
         };
-        Ok(())
+        Ok(id)
     }
 
     fn request_exit(&mut self) {
         self.exit_requested = true;
     }
+}
 
-    fn poll(&mut self, deliver: impl FnOnce(PlatformEvent, &[u8])) -> bool {
+impl Services<'_> {
+    pub(crate) fn poll_events(&mut self, events: &mut [PlatformEvent]) -> usize {
+        assert!(events.len() <= MAX_EVENTS);
+        let mut count = 0;
+        for slot in events {
+            let Some(event) = self.poll() else { break };
+            *slot = event;
+            count += 1;
+        }
+        count
+    }
+
+    fn poll(&mut self) -> Option<PlatformEvent> {
         let completion = match self.worker.queue.try_lock() {
             Ok(mut queue) => queue.completed.pop_front(),
             Err(TryLockError::WouldBlock) => None,
             Err(TryLockError::Poisoned(_)) => panic!("file worker queue poisoned"),
         };
         if let Some(Completion { job, transfer }) = completion {
-            let Slot::Io { id, kind } = self.slots[job.slot] else {
+            let Slot::Io { id, kind, range } = self.slots[job.slot] else {
                 panic!("completion must retain its reserved request slot");
             };
             assert_eq!(id, job.id);
+            assert!(transfer.bytes <= range.len);
+            if let IoKind::Read = kind {
+                self.persistent[range.offset..range.offset + transfer.bytes]
+                    .copy_from_slice(&job.buffer[..transfer.bytes]);
+            }
             let event = match kind {
                 IoKind::Read => PlatformEvent::ReadCompleted {
                     id,
@@ -343,14 +424,9 @@ impl Backend for Services {
                     status: transfer.status,
                 },
             };
-            let data = match kind {
-                IoKind::Read => &job.buffer[..transfer.bytes],
-                IoKind::Write => &[],
-            };
-            deliver(event, data);
             self.buffers[job.slot] = Some(job.buffer);
             self.slots[job.slot] = Slot::Idle;
-            return true;
+            return Some(event);
         }
         for slot in &mut self.slots {
             if let Slot::Window {
@@ -363,20 +439,18 @@ impl Backend for Services {
                     status: *status,
                 };
                 *slot = Slot::Idle;
-                deliver(event, &[]);
-                return true;
+                return Some(event);
             }
         }
         if self.close_requested {
             self.close_requested = false;
-            deliver(PlatformEvent::CloseRequested, &[]);
-            return true;
+            return Some(PlatformEvent::CloseRequested);
         }
-        false
+        None
     }
 }
 
-impl Drop for Services {
+impl Drop for Services<'_> {
     fn drop(&mut self) {
         for progress in &self.worker.progress {
             let _ =
@@ -429,16 +503,19 @@ impl Worker {
     }
 }
 
-fn validate_io_range(offset: u64, len: usize) -> Result<(), RequestError> {
-    let len_u64 = u64::try_from(len).map_err(|_| RequestError::InvalidRange)?;
-    if len > MAX_IO_BYTES
-        || offset
-            .checked_add(len_u64)
-            .is_none_or(|end| end > MAX_FILE_BYTES)
-    {
-        return Err(RequestError::InvalidRange);
-    }
-    Ok(())
+fn overlaps(range: MemoryRange, other: MemoryRange) -> bool {
+    range.len != 0
+        && other.len != 0
+        && range.offset
+            < other
+                .offset
+                .checked_add(other.len)
+                .expect("validated range")
+        && other.offset
+            < range
+                .offset
+                .checked_add(range.len)
+                .expect("validated range")
 }
 
 fn perform(job: &mut Job, progress: &AtomicU8) -> io::Result<Transfer> {

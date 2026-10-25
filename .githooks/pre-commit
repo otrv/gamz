@@ -43,8 +43,6 @@ if ! "$all"; then
                 format=true; cli=true; linux=true; core=true ;;
             crates/renderer/*)
                 format=true; linux=true ;;
-            crates/platform/*)
-                format=true; cli=true; linux=true ;;
             crates/platform-linux/*)
                 format=true; cli=true; linux=true ;;
             crates/asset-packer/*)
