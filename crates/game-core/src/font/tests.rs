@@ -1,5 +1,5 @@
 use crate::font::{Font, FontError, LayoutError, MAX_TEXT_BYTES, TextMetrics};
-use platform_api::math::Radians;
+use math::Radians;
 use platform_api::render::{GlyphQuad, Image, PixelRect, Point, Scale, Size, Transform};
 
 fn fixture() -> [u8; 1344] {

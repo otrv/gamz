@@ -1,4 +1,4 @@
-use crate::math::Radians;
+use math::Radians;
 
 pub const MAX_COMMANDS: usize = 16_384;
 pub const MAX_QUADS: usize = 65_536;

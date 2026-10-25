@@ -1,6 +1,6 @@
+use crate::Radians;
 use core::ops::{Add, Mul, Sub};
 use glam::{DVec4, Vec4};
-use platform_api::math::Radians;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vec2 {
@@ -211,9 +211,8 @@ impl Mul<[f32; 4]> for Vec2x4 {
 
 #[cfg(test)]
 mod tests {
-    use super::{NormalizeError, Vec2, Vec2x4};
+    use crate::{NormalizeError, Radians, Vec2, Vec2x4};
     use core::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_2, FRAC_PI_4, PI};
-    use platform_api::math::Radians;
 
     fn close(actual: f32, expected: f32) {
         assert!(

@@ -2,7 +2,7 @@ use game_core::asset;
 use game_core::font::{Font, FontError};
 use game_core::render::{RenderCommands, RenderError};
 use game_memory::Arena;
-use platform_api::math::Radians;
+use math::Radians;
 use platform_api::render::{
     Color, GlyphQuad, Image, PixelRect, Point, Rect, RectStyle, RenderCommand, Sampling, Scale,
     Size, Text, TextureId, Transform,

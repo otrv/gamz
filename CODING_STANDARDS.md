@@ -29,7 +29,9 @@ APIs with a complete arena-backed usage example before implementation.
 
 `platform-api` contains shared contracts and their validation. It contains no
 game selection, game mechanisms, or backend implementations. Boundary signatures
-use its types and an opaque game-owned state root. Hosts link `game` directly.
+use its types, shared `math` value types, and an opaque game-owned state root.
+`math` owns mathematical types and operations independently of game and platform
+crates. Hosts link `game` directly.
 Keep platform and third-party library types out of game-side interfaces,
 including nested types and errors. Keep target-specific code and libraries
 inside the platform module for that target.
@@ -40,7 +42,7 @@ Frame scratch resets together. Persistent game memory holds values, indices,
 handles, and offsets, never references or pointers. Its contents must remain
 valid when game code reloads.
 
-Game-side crates are `platform-api`, `game-core`, `game-memory`, and `game`.
+Game-side crates are `platform-api`, `game-core`, `game-memory`, `math`, and `game`.
 They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have
 runtime dependencies that use neither. Check transitive dependencies and enabled
 features when versions or features change.
@@ -159,8 +161,8 @@ are not handwritten suppressions.
 
 ### Tests
 
-Unit tests are allowed only for small, reusable utilities in `game-core` and
-`game-memory`. Test behavior callers rely on through public interfaces, not
+Unit tests are allowed only for small, reusable utilities in `game-core`,
+`game-memory`, and `math`. Test behavior callers rely on through public interfaces, not
 private helpers or incidental implementation details. Prefer extending existing
 tests over adding new ones. Keep a regression test only when it would catch a
 plausible future mistake that types and existing tests would miss.

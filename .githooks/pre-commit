@@ -10,6 +10,7 @@ web=false
 package_web=false
 core=false
 memory=false
+math=false
 miri=false
 packer=false
 format=false
@@ -38,6 +39,8 @@ if ! "$all"; then
                 format=true; cli=true; linux=true; web=true; core=true ;;
             crates/game-memory/*)
                 format=true; cli=true; linux=true; web=true; memory=true; miri=true ;;
+            crates/math/*)
+                format=true; cli=true; linux=true; web=true; core=true; math=true ;;
             crates/platform-api/*)
                 format=true; cli=true; linux=true; web=true; core=true ;;
             crates/renderer/*)
@@ -105,11 +108,17 @@ fi
 if ! "$all" && "$memory"; then
     cargo clippy -p game-memory --all-targets --all-features --locked --target "$native_target"
 fi
+if ! "$all" && "$math"; then
+    cargo clippy -p math --all-targets --all-features --locked --target "$native_target"
+fi
 if "$all" || "$core"; then
     cargo test -p game-core --locked
 fi
 if "$all" || "$memory"; then
     cargo test -p game-memory --locked
+fi
+if "$all" || "$math"; then
+    cargo test -p math --locked
 fi
 if "$all" || "$miri"; then
     rustup run nightly-2026-10-01 cargo miri test -p game-memory --all-features --locked

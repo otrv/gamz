@@ -61,7 +61,7 @@ impl<'a> RenderCommands<'a> {
 #[cfg(test)]
 mod tests {
     use super::{RenderCommands, RenderError};
-    use platform_api::math::Radians;
+    use math::Radians;
     use platform_api::render::{
         Canvas, Color, Frame, GlyphQuad, MAX_QUADS, PixelRect, Point, Rect, RectStyle,
         RenderCommand, Sampling, Size, StrokeWidth, Text, TextureId, Transform,

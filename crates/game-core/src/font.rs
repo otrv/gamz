@@ -1,7 +1,7 @@
 mod data;
 
 use data::FontData;
-use platform_api::math::Radians;
+use math::Radians;
 use platform_api::render::{GlyphQuad, Image, PixelRect, Point, Scale, Size, Transform};
 
 pub use data::MAX_FONT_FILE_BYTES;
