@@ -1,6 +1,6 @@
 mod rgba;
 
-pub use rgba::read_rgba;
+pub use rgba::{InvalidImage, read_rgba};
 
 #[cfg(test)]
 mod tests;

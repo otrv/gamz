@@ -1,5 +1,4 @@
-use crate::asset::{AssetId, Pack, PackError, read_rgba};
-use platform_api::render::InvalidImage;
+use crate::asset::{AssetId, InvalidImage, Pack, PackError, read_rgba};
 
 fn fixture() -> [u8; 84] {
     let mut bytes = [0; 84];
@@ -96,9 +95,17 @@ fn rejects_ambiguous_or_invalid_catalogs() {
 fn decodes_images_independently_of_packs() {
     let image_bytes = b"RGBA\x02\0\x01\0\x0b\x16\x21\x2c\x01\x02\x03\x04";
     let image = read_rgba(image_bytes).unwrap();
-    assert_eq!((image.width(), image.height()), (2, 1));
-    assert_eq!(image.rgba(), &[11, 22, 33, 44, 1, 2, 3, 4]);
+    assert_eq!((image.width, image.height), (2, 1));
+    assert_eq!(image.rgba, &[11, 22, 33, 44, 1, 2, 3, 4]);
     assert_eq!(read_rgba(b"GFN1\0\0\0\0").err(), Some(InvalidImage));
+    for invalid in [
+        &b"RGBA\0\0\x01\0"[..],
+        &b"RGBA\x01\0\0\0"[..],
+        &b"RGBA\xff\xff\xff\xff"[..],
+        &b"RGBA\x01\0\x01\0\0\0\0\0\0"[..],
+    ] {
+        assert_eq!(read_rgba(invalid).err(), Some(InvalidImage));
+    }
     for length in 0..image_bytes.len() {
         assert_eq!(read_rgba(&image_bytes[..length]).err(), Some(InvalidImage));
     }

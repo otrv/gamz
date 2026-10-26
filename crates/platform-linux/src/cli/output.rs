@@ -1,14 +1,16 @@
-use platform_api::audio::{SampleRate, StereoFrame};
+use math::{Rect, Vec4};
+use platform_api::audio::StereoSample;
 use platform_api::render;
 use platform_api::render::{
-    Color, GlyphQuad, MAX_TEXTURE_BYTES, MAX_TEXTURES, PixelRect, Rect, RectStyle, RenderCommand,
-    Sampling, TextureUpload, Transform,
+    PixelRect, RectStyle, RenderCommand, Sampling, TextureId, TexturedQuad,
 };
 use serde::{Serialize, Serializer};
 
+use crate::textures::Upload;
+
 pub(super) struct AudioOutput<'a> {
-    pub(super) sample_rate: SampleRate,
-    pub(super) frames: &'a [StereoFrame],
+    pub(super) sample_rate: u32,
+    pub(super) frames: &'a [StereoSample],
 }
 
 impl Serialize for AudioOutput<'_> {
@@ -20,14 +22,14 @@ impl Serialize for AudioOutput<'_> {
         }
 
         Fields {
-            sample_rate: self.sample_rate.hz(),
+            sample_rate: self.sample_rate,
             frames: Samples(self.frames),
         }
         .serialize(serializer)
     }
 }
 
-struct Samples<'a>(&'a [StereoFrame]);
+struct Samples<'a>(&'a [StereoSample]);
 
 impl Serialize for Samples<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -40,7 +42,7 @@ pub(super) struct Startup<'a> {
     pub(super) uploads: Uploads<'a>,
 }
 
-pub(super) struct Uploads<'a>(pub(super) &'a [TextureUpload<'a>]);
+pub(super) struct Uploads<'a>(pub(super) &'a [Upload]);
 
 impl Uploads<'_> {
     fn is_empty(&self) -> bool {
@@ -51,54 +53,69 @@ impl Uploads<'_> {
 impl Serialize for Uploads<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Upload<'a> {
-            id: usize,
+        struct UploadFields<'a> {
+            id: u16,
             image: Image<'a>,
         }
         #[derive(Serialize)]
         struct Image<'a> {
-            width: u16,
-            height: u16,
+            width: u32,
+            height: u32,
             rgba: &'a [u8],
         }
 
-        assert!(self.0.len() <= MAX_TEXTURES);
-        let mut bytes = 0;
-        serializer.collect_seq(self.0.iter().map(|upload| {
-            bytes += upload.image.rgba().len();
-            assert!(bytes <= MAX_TEXTURE_BYTES);
-            Upload {
-                id: upload.id.index(),
-                image: Image {
-                    width: upload.image.width(),
-                    height: upload.image.height(),
-                    rgba: upload.image.rgba(),
-                },
-            }
+        serializer.collect_seq(self.0.iter().map(|upload| UploadFields {
+            id: upload.id.0,
+            image: Image {
+                width: upload.width,
+                height: upload.height,
+                rgba: &upload.rgba,
+            },
         }))
     }
 }
 
-pub(super) struct FrameOutput<'a>(pub(super) &'a render::FrameOutput<'a>);
+pub(super) struct FrameOutput<'a> {
+    pub(super) frame: &'a render::Frame<'a>,
+    pub(super) uploads: Uploads<'a>,
+    pub(super) releases: &'a [TextureId],
+}
 
 impl Serialize for FrameOutput<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Fields<'a> {
             canvas: [f32; 2],
-            clear: [u8; 4],
+            clear: [f32; 4],
             commands: Commands<'a>,
             #[serde(skip_serializing_if = "Uploads::is_empty")]
             uploads: Uploads<'a>,
+            #[serde(skip_serializing_if = "Releases::is_empty")]
+            releases: Releases<'a>,
         }
 
         Fields {
-            canvas: [self.0.frame.canvas.width(), self.0.frame.canvas.height()],
-            clear: color(self.0.frame.clear),
-            commands: Commands(self.0.frame.commands()),
-            uploads: Uploads(self.0.uploads()),
+            canvas: [self.frame.canvas_size.x, self.frame.canvas_size.y],
+            clear: color(self.frame.clear_color),
+            commands: Commands(self.frame.commands),
+            uploads: Uploads(self.uploads.0),
+            releases: Releases(self.releases),
         }
         .serialize(serializer)
+    }
+}
+
+struct Releases<'a>(&'a [TextureId]);
+
+impl Releases<'_> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Serialize for Releases<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|id| id.0))
     }
 }
 
@@ -120,13 +137,6 @@ enum Command<'a> {
     SetClip {
         rect: Option<[f32; 4]>,
     },
-    DrawSprite {
-        texture: usize,
-        source: [u16; 4],
-        transform: TransformFields,
-        tint: [u8; 4],
-        sampling: &'static str,
-    },
     DrawRect {
         rect: [f32; 4],
         style: Style,
@@ -135,12 +145,12 @@ enum Command<'a> {
         start: [f32; 2],
         end: [f32; 2],
         width: f32,
-        color: [u8; 4],
+        color: [f32; 4],
     },
-    DrawText {
-        glyphs: Glyphs<'a>,
-        texture: usize,
-        color: [u8; 4],
+    DrawQuads {
+        texture: u16,
+        quads: Quads<'a>,
+        tint: [f32; 4],
         sampling: &'static str,
     },
 }
@@ -148,19 +158,12 @@ enum Command<'a> {
 impl<'a> From<&RenderCommand<'a>> for Command<'a> {
     fn from(command: &RenderCommand<'a>) -> Self {
         match *command {
-            RenderCommand::SetCamera(camera) => Self::SetCamera {
-                origin: [camera.origin.x(), camera.origin.y()],
-                zoom: camera.zoom.get(),
+            RenderCommand::SetCamera { origin, zoom } => Self::SetCamera {
+                origin: [origin.x, origin.y],
+                zoom,
             },
             RenderCommand::SetClip(clip) => Self::SetClip {
-                rect: clip.map(|clip| rect(clip.bounds())),
-            },
-            RenderCommand::DrawSprite(sprite) => Self::DrawSprite {
-                texture: sprite.texture.index(),
-                source: pixels(sprite.source),
-                transform: sprite.transform.into(),
-                tint: color(sprite.tint),
-                sampling: sampling(sprite.sampling),
+                rect: clip.map(rect),
             },
             RenderCommand::DrawRect {
                 rect: bounds,
@@ -176,7 +179,7 @@ impl<'a> From<&RenderCommand<'a>> for Command<'a> {
                         width,
                     } => Style::Outline {
                         color: color(value),
-                        width: width.get(),
+                        width,
                     },
                 },
             },
@@ -186,16 +189,21 @@ impl<'a> From<&RenderCommand<'a>> for Command<'a> {
                 width,
                 color: value,
             } => Self::DrawLine {
-                start: [start.x(), start.y()],
-                end: [end.x(), end.y()],
-                width: width.get(),
+                start: [start.x, start.y],
+                end: [end.x, end.y],
+                width,
                 color: color(value),
             },
-            RenderCommand::DrawText(text) => Self::DrawText {
-                glyphs: Glyphs(text.glyphs()),
-                texture: text.texture.index(),
-                color: color(text.color),
-                sampling: sampling(text.sampling),
+            RenderCommand::DrawQuads {
+                texture,
+                quads,
+                tint,
+                sampling: mode,
+            } => Self::DrawQuads {
+                texture: texture.0,
+                quads: Quads(quads),
+                tint: color(tint),
+                sampling: sampling(mode),
             },
         }
     }
@@ -204,59 +212,41 @@ impl<'a> From<&RenderCommand<'a>> for Command<'a> {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Style {
-    Filled { color: [u8; 4] },
-    Outline { color: [u8; 4], width: f32 },
+    Filled { color: [f32; 4] },
+    Outline { color: [f32; 4], width: f32 },
 }
 
-#[derive(Serialize)]
-struct TransformFields {
-    center: [f32; 2],
-    size: [f32; 2],
-    rotation: f32,
-}
+struct Quads<'a>(&'a [TexturedQuad]);
 
-impl From<Transform> for TransformFields {
-    fn from(transform: Transform) -> Self {
-        Self {
-            center: [transform.center.x(), transform.center.y()],
-            size: [transform.size.width(), transform.size.height()],
-            rotation: transform.rotation.get(),
-        }
-    }
-}
-
-struct Glyphs<'a>(&'a [GlyphQuad]);
-
-impl Serialize for Glyphs<'_> {
+impl Serialize for Quads<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
-        struct Glyph {
+        struct Quad {
             source: [u16; 4],
-            transform: TransformFields,
+            center: [f32; 2],
+            size: [f32; 2],
+            rotation: f32,
         }
 
-        serializer.collect_seq(self.0.iter().map(|glyph| Glyph {
-            source: pixels(glyph.source),
-            transform: glyph.transform.into(),
+        serializer.collect_seq(self.0.iter().map(|quad| Quad {
+            source: pixels(quad.source),
+            center: [quad.center.x, quad.center.y],
+            size: [quad.size.x, quad.size.y],
+            rotation: quad.rotation.get(),
         }))
     }
 }
 
-fn color(color: Color) -> [u8; 4] {
-    [color.red, color.green, color.blue, color.alpha]
+fn color(color: Vec4) -> [f32; 4] {
+    [color.x, color.y, color.z, color.w]
 }
 
 fn rect(rect: Rect) -> [f32; 4] {
-    [
-        rect.origin().x(),
-        rect.origin().y(),
-        rect.size().width(),
-        rect.size().height(),
-    ]
+    [rect.origin.x, rect.origin.y, rect.size.x, rect.size.y]
 }
 
 fn pixels(rect: PixelRect) -> [u16; 4] {
-    [rect.x(), rect.y(), rect.width(), rect.height()]
+    [rect.x, rect.y, rect.width, rect.height]
 }
 
 fn sampling(sampling: Sampling) -> &'static str {

@@ -1,23 +1,36 @@
 use crate::Platform;
-use crate::audio::AudioBuffer;
-use crate::input::FrameInput;
+use crate::audio::StereoSample;
+use crate::input::Input;
 use crate::memory::{PersistentMemory, TransientMemory};
-use crate::render::FrameOutput;
-use crate::services::StartupError;
+use crate::render::{Frame, TextureError};
 
 pub trait Game: Sized {
-    fn initialize<'p>(
-        memory: PersistentMemory<'p>,
+    fn initialize<'persistent, Context>(
+        memory: PersistentMemory<'persistent>,
         transient_capacity: usize,
-        platform: &mut impl Platform<'p>,
-    ) -> Result<&'p mut Self, StartupError>;
+        platform: &mut Platform<'_, Context>,
+    ) -> Result<&'persistent mut Self, StartupError>;
 
-    fn update<'p, 't>(
+    fn update<'frame, Context>(
         &mut self,
-        platform: &mut impl Platform<'p>,
-        memory: TransientMemory<'t>,
-        input: &FrameInput<'_>,
-    ) -> FrameOutput<'t>;
+        input: &Input<'_>,
+        memory: TransientMemory<'frame>,
+        platform: &mut Platform<'_, Context>,
+    ) -> Result<Frame<'frame>, FrameError>;
 
-    fn update_audio<'p>(&mut self, platform: &mut impl Platform<'p>, buffer: AudioBuffer<'_>);
+    fn update_audio(&mut self, sample_rate_hz: u32, samples: &mut [StereoSample]);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartupError {
+    InsufficientPersistentMemory { required: usize, available: usize },
+    InsufficientTransientMemory { required: usize, available: usize },
+    Texture(TextureError),
+    Game { code: u32 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameError {
+    InsufficientTransientMemory { required: usize, available: usize },
+    Texture(TextureError),
 }

@@ -1,8 +1,8 @@
 mod data;
 
 use data::FontData;
-use math::Radians;
-use platform_api::render::{GlyphQuad, Image, PixelRect, Point, Scale, Size, Transform};
+use math::{Radians, Vec2};
+use platform_api::render::{Image, TexturedQuad};
 
 pub use data::MAX_FONT_FILE_BYTES;
 
@@ -30,12 +30,12 @@ pub enum LayoutError {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextMetrics {
-    pub advance_size: Size,
+    pub advance_size: Vec2,
     pub glyph_count: usize,
 }
 
 pub struct PreparedText<'a> {
-    pub glyphs: &'a [GlyphQuad],
+    pub glyphs: &'a [TexturedQuad],
     pub metrics: TextMetrics,
 }
 
@@ -46,21 +46,21 @@ impl Font {
         })
     }
 
-    pub fn measure(&self, text: &str, scale: Scale) -> Result<TextMetrics, LayoutError> {
-        self.layout(text, Point::new(0.0, 0.0), scale, |_, _| Ok(()))
+    pub fn measure(&self, text: &str, scale: f32) -> Result<TextMetrics, LayoutError> {
+        self.layout(text, Vec2::ZERO, scale, |_| Ok(()))
     }
 
     pub fn prepare<'a>(
         &self,
         text: &str,
-        origin: Point,
-        scale: Scale,
-        output: &'a mut [GlyphQuad],
+        origin: Vec2,
+        scale: f32,
+        output: &'a mut [TexturedQuad],
     ) -> Result<PreparedText<'a>, LayoutError> {
         let mut count = 0;
-        let metrics = self.layout(text, origin, scale, |source, transform| {
+        let metrics = self.layout(text, origin, scale, |quad| {
             let slot = output.get_mut(count).ok_or(LayoutError::OutputTooSmall)?;
-            *slot = GlyphQuad { source, transform };
+            *slot = quad;
             count += 1;
             Ok(())
         })?;
@@ -73,14 +73,16 @@ impl Font {
     fn layout(
         &self,
         text: &str,
-        origin: Point,
-        scale: Scale,
-        mut emit: impl FnMut(PixelRect, Transform) -> Result<(), LayoutError>,
+        origin: Vec2,
+        scale: f32,
+        mut emit: impl FnMut(TexturedQuad) -> Result<(), LayoutError>,
     ) -> Result<TextMetrics, LayoutError> {
         if text.len() > MAX_TEXT_BYTES {
             return Err(LayoutError::TextTooLong);
         }
-        let scale = scale.get();
+        if !origin.x.is_finite() || !origin.y.is_finite() || !scale.is_finite() || scale <= 0.0 {
+            return Err(LayoutError::OutOfBounds);
+        }
         let mut pen_x = 0.0_f32;
         let mut pen_y = 0.0_f32;
         let mut width = 0.0_f32;
@@ -91,6 +93,9 @@ impl Font {
                 width = width.max(pen_x);
                 pen_x = 0.0;
                 pen_y += f32::from(self.data.line_height()) * scale;
+                if !pen_y.is_finite() {
+                    return Err(LayoutError::OutOfBounds);
+                }
                 previous = None;
                 continue;
             }
@@ -107,44 +112,47 @@ impl Font {
                 }
             }
             let glyph = self.data.glyphs()[index];
-            if glyph.source.width() != 0 && glyph.source.height() != 0 {
-                let size = Size::new(
-                    f32::from(glyph.source.width()) * scale,
-                    f32::from(glyph.source.height()) * scale,
+            if glyph.source.width != 0 && glyph.source.height != 0 {
+                let size = Vec2::new(
+                    f32::from(glyph.source.width) * scale,
+                    f32::from(glyph.source.height) * scale,
                 );
-                emit(
-                    glyph.source,
-                    Transform {
-                        center: Point::try_new(
-                            origin.x()
-                                + pen_x
-                                + f32::from(glyph.offset_x) * scale
-                                + size.width() * 0.5,
-                            origin.y()
-                                + pen_y
-                                + f32::from(glyph.offset_y) * scale
-                                + size.height() * 0.5,
-                        )
-                        .map_err(|_| LayoutError::OutOfBounds)?,
-                        size,
-                        rotation: Radians::new(0.0),
-                    },
-                )?;
+                let center = Vec2::new(
+                    origin.x + pen_x + f32::from(glyph.offset_x) * scale + size.x * 0.5,
+                    origin.y + pen_y + f32::from(glyph.offset_y) * scale + size.y * 0.5,
+                );
+                if !size.x.is_finite()
+                    || !size.y.is_finite()
+                    || !center.x.is_finite()
+                    || !center.y.is_finite()
+                {
+                    return Err(LayoutError::OutOfBounds);
+                }
+                emit(TexturedQuad {
+                    source: glyph.source,
+                    center,
+                    size,
+                    rotation: Radians::new(0.0),
+                })?;
                 glyph_count += 1;
             }
             pen_x += f32::from(glyph.advance) / 64.0 * scale;
+            if !pen_x.is_finite() {
+                return Err(LayoutError::OutOfBounds);
+            }
             width = width.max(pen_x);
             previous = Some(index);
         }
+        let height = if text.is_empty() {
+            0.0
+        } else {
+            pen_y + f32::from(self.data.line_height()) * scale
+        };
+        if !height.is_finite() {
+            return Err(LayoutError::OutOfBounds);
+        }
         Ok(TextMetrics {
-            advance_size: Size::new(
-                width,
-                if text.is_empty() {
-                    0.0
-                } else {
-                    pen_y + f32::from(self.data.line_height()) * scale
-                },
-            ),
+            advance_size: Vec2::new(width, height),
             glyph_count,
         })
     }

@@ -41,7 +41,15 @@ impl FontData {
 }
 
 pub(super) fn read_font(bytes: &[u8], atlas: Image<'_>) -> Result<FontData, FontError> {
-    if bytes.len() < 10 || &bytes[..4] != b"GFN1" {
+    let atlas_length = usize::from(atlas.width)
+        .checked_mul(usize::from(atlas.height))
+        .and_then(|pixels| pixels.checked_mul(4));
+    if atlas.width == 0
+        || atlas.height == 0
+        || atlas_length != Some(atlas.rgba.len())
+        || bytes.len() < 10
+        || &bytes[..4] != b"GFN1"
+    {
         return Err(FontError::InvalidData);
     }
     let line_height = word(bytes, 4);
@@ -55,7 +63,12 @@ pub(super) fn read_font(bytes: &[u8], atlas: Image<'_>) -> Result<FontData, Font
         return Err(FontError::InvalidData);
     }
     let empty = Glyph {
-        source: PixelRect::new(0, 0, 0, 0),
+        source: PixelRect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        },
         offset_x: 0,
         offset_y: 0,
         advance: 0,
@@ -79,15 +92,20 @@ pub(super) fn read_font(bytes: &[u8], atlas: Image<'_>) -> Result<FontData, Font
         let offset_x = signed_word(bytes, offset + 8);
         let offset_y = signed_word(bytes, offset + 10);
         let advance = word(bytes, offset + 12);
-        if u32::from(x) + u32::from(width) > u32::from(atlas.width())
-            || u32::from(y) + u32::from(height) > u32::from(atlas.height())
+        if u32::from(x) + u32::from(width) > u32::from(atlas.width)
+            || u32::from(y) + u32::from(height) > u32::from(atlas.height)
             || offset_x.unsigned_abs() > 1024
             || offset_y.unsigned_abs() > 1024
         {
             return Err(FontError::InvalidData);
         }
         *glyph = Glyph {
-            source: PixelRect::new(x, y, width, height),
+            source: PixelRect {
+                x,
+                y,
+                width,
+                height,
+            },
             offset_x,
             offset_y,
             advance,

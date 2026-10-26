@@ -2,10 +2,9 @@ use game_core::asset;
 use game_core::font::{Font, FontError};
 use game_core::render::{RenderCommands, RenderError};
 use game_memory::Arena;
-use math::Radians;
+use math::{Radians, Rect, Vec2, Vec4};
 use platform_api::render::{
-    Color, GlyphQuad, Image, PixelRect, Point, Rect, RectStyle, RenderCommand, Sampling, Scale,
-    Size, Text, TextureId, Transform,
+    Image, PixelRect, RectStyle, RenderCommand, Sampling, TextureId, TexturedQuad,
 };
 
 const GLYPHS: usize = 95;
@@ -24,43 +23,43 @@ pub(super) fn font() -> Result<Font, FontError> {
 pub(super) fn draw<'a>(
     font: &Font,
     label: &str,
-    color: Color,
+    color: Vec4,
     arena: &mut Arena<'a>,
     commands: &mut RenderCommands<'a>,
 ) -> Result<(), RenderError> {
-    let scale = Scale::new(3.0);
+    let scale = 3.0;
     let metrics = font
         .measure(label, scale)
         .expect("HUD labels fit the text budget");
-    let origin = Point::new((1280.0 - metrics.advance_size.width()) * 0.5, 24.0);
+    let origin = Vec2::new((1280.0 - metrics.advance_size.x) * 0.5, 24.0);
     let glyphs = arena.push_slice(
         metrics.glyph_count,
-        GlyphQuad {
-            source: PixelRect::new(0, 0, 0, 0),
-            transform: Transform {
-                center: origin,
-                size: Size::new(0.0, 0.0),
-                rotation: Radians::new(0.0),
+        TexturedQuad {
+            source: PixelRect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
             },
+            center: origin,
+            size: Vec2::ZERO,
+            rotation: Radians::new(0.0),
         },
     );
     let prepared = font
         .prepare(label, origin, scale, glyphs)
         .expect("measured HUD glyph storage and canvas placement fit");
-    commands.push(RenderCommand::DrawText(Text::new(
-        prepared.glyphs,
-        TextureId::new(0),
-        color,
-        Sampling::Nearest,
-    )))?;
+    commands.push(RenderCommand::DrawQuads {
+        quads: prepared.glyphs,
+        texture: TextureId(0),
+        tint: color,
+        sampling: Sampling::Nearest,
+    })?;
     commands.push(RenderCommand::DrawRect {
-        rect: Rect::new(
-            Point::new(
-                origin.x(),
-                origin.y() + prepared.metrics.advance_size.height(),
-            ),
-            Size::new(prepared.metrics.advance_size.width(), 2.0),
-        ),
+        rect: Rect {
+            origin: Vec2::new(origin.x, origin.y + prepared.metrics.advance_size.y),
+            size: Vec2::new(prepared.metrics.advance_size.x, 2.0),
+        },
         style: RectStyle::Filled(color),
     })
 }

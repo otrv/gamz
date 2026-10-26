@@ -6,7 +6,7 @@
 | Game and engine CPU cost | [CLI measurements](performance.md) | A fixed workload with independently checked results. |
 | Presentation, OS events, playback, and host lifecycle | [Platform checks](platforms.md) | Only the affected platform's behavior, never game correctness. |
 
-Hosts call the `platform_api::Game` trait with `&mut impl Platform<'p>`. The game-facing `platform_api::Platform` trait exposes safe references without backend or polling access. Linux desktop and CLI use `Services` in `crates/platform-linux/src/linux/services.rs` to implement that contract. Follow the current game implementation to choose a task-specific CLI workload. The CLI cannot inject render commands or force arbitrary engine paths.
+Hosts call the `platform_api::Game` trait with a `Platform` function table borrowing host-owned context. Frame and audio updates are separate. Linux desktop and CLI own callback implementations and resource limits in `crates/platform-linux/src/`. Follow the current game implementation to choose a task-specific CLI workload. The CLI cannot inject render commands or force arbitrary engine paths.
 
 Existing `game-core` tests cover parts of asset validation, math, and entity storage. `game-memory` tests and Miri cover arena behavior. Run `cargo test -p game-core -p game-memory --locked` for unit tests. The full pre-commit hook also runs Miri for `game-memory`. Verify boundary behavior through the production CLI with task-specific workloads. Passing checks do not prove every utility operation or game integration.
 

@@ -8,16 +8,14 @@ use game_core::entity::{EntityId, EntityStorage};
 use game_core::font::Font;
 use game_core::render::RenderCommands;
 use game_memory::Arena;
-use math::{Radians, Vec2, Vec2x4};
-use platform_api::audio::{AudioBuffer, StereoFrame};
-use platform_api::input::{ButtonPosition, ButtonState, FrameInput};
+use math::{Radians, Rect, Vec2, Vec2x4, Vec4};
+use platform_api::audio::StereoSample;
+use platform_api::input::{ButtonPosition, ButtonState, Input, PlatformEvent};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
-    Canvas, Color, Frame, FrameOutput, GlyphQuad, Point, Rect, RectStyle, RenderCommand, Size,
-    StrokeWidth, TextureId, TextureUpload,
+    Frame, RectStyle, RenderCommand, TextureId, TextureUpload, TexturedQuad,
 };
-use platform_api::services::{PlatformEvent, StartupError};
-use platform_api::{Game, Platform};
+use platform_api::{FrameError, Game, Platform, StartupError};
 
 const BRICK_COUNT: usize = 32;
 const MAX_RENDER_COMMANDS: usize = BRICK_COUNT + 12;
@@ -37,14 +35,14 @@ const MAX_IMPACTS: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
 struct Brick {
-    center: Point,
-    color: Color,
+    center: Vec2,
+    color: Vec4,
 }
 
 #[derive(Clone, Copy)]
 enum Phase {
     Ready,
-    Playing { ball: Point, velocity: Vec2 },
+    Playing { ball: Vec2, velocity: Vec2 },
     Won,
     Lost,
 }
@@ -52,8 +50,8 @@ enum Phase {
 pub struct GameState {
     bricks: EntityStorage<Brick, BRICK_COUNT>,
     font: Font,
-    font_uploaded: bool,
-    paddle: Point,
+    transient_capacity: usize,
+    paddle: Vec2,
     phase: Phase,
     lives: u8,
 }
@@ -66,55 +64,35 @@ impl GameState {
                 let _ = self
                     .bricks
                     .insert(Brick {
-                        center: Point::new(
+                        center: Vec2::new(
                             115.0 + f32::from(column) * 150.0,
                             132.0 + f32::from(row) * 40.0,
                         ),
                         color: [
-                            Color {
-                                red: 248,
-                                green: 112,
-                                blue: 108,
-                                alpha: 255,
-                            },
-                            Color {
-                                red: 255,
-                                green: 190,
-                                blue: 110,
-                                alpha: 255,
-                            },
-                            Color {
-                                red: 112,
-                                green: 230,
-                                blue: 204,
-                                alpha: 255,
-                            },
-                            Color {
-                                red: 156,
-                                green: 170,
-                                blue: 255,
-                                alpha: 255,
-                            },
+                            Vec4::new(248.0 / 255.0, 112.0 / 255.0, 108.0 / 255.0, 1.0),
+                            Vec4::new(1.0, 190.0 / 255.0, 110.0 / 255.0, 1.0),
+                            Vec4::new(112.0 / 255.0, 230.0 / 255.0, 204.0 / 255.0, 1.0),
+                            Vec4::new(156.0 / 255.0, 170.0 / 255.0, 1.0, 1.0),
                         ][usize::from(row)],
                     })
                     .expect("brick budget matches the grid");
             }
         }
-        self.paddle = Point::new(640.0, PADDLE_Y);
+        self.paddle = Vec2::new(640.0, PADDLE_Y);
         self.phase = Phase::Ready;
         self.lives = 3;
     }
 
-    fn ready_ball(&self) -> Point {
-        Point::new(self.paddle.x(), PADDLE_Y - BALL_HALF)
+    fn ready_ball(&self) -> Vec2 {
+        Vec2::new(self.paddle.x, PADDLE_Y - BALL_HALF)
     }
 }
 
 impl Game for GameState {
-    fn initialize<'p>(
+    fn initialize<'p, Context>(
         memory: PersistentMemory<'p>,
         transient_capacity: usize,
-        platform: &mut impl Platform<'p>,
+        platform: &mut Platform<'_, Context>,
     ) -> Result<&'p mut Self, StartupError> {
         let required = size_of::<Self>() + align_of::<Self>() - 1;
         if memory.bytes.len() < required {
@@ -130,51 +108,70 @@ impl Game for GameState {
             .expect("the HUD has labels");
         let required_transient = size_of::<RenderCommand<'_>>() * MAX_RENDER_COMMANDS
             + (align_of::<RenderCommand<'_>>() - 1)
-            + size_of::<GlyphQuad>() * max_glyphs
-            + (align_of::<GlyphQuad>() - 1)
-            + size_of::<TextureUpload<'_>>()
-            + (align_of::<TextureUpload<'_>>() - 1);
+            + size_of::<TexturedQuad>() * max_glyphs
+            + (align_of::<TexturedQuad>() - 1);
         if transient_capacity < required_transient {
             return Err(StartupError::InsufficientTransientMemory {
                 required: required_transient,
                 available: transient_capacity,
             });
         }
-        let (root, io) = memory.bytes.split_at_mut(required);
-        let capacity = io.len();
-        platform.set_persistent_memory(Arena::new(io).push_slice(capacity, 0_u8));
         let mut state = Self {
             bricks: EntityStorage::new(),
             font: hud::font().map_err(|_| StartupError::Game { code: 1 })?,
-            font_uploaded: false,
-            paddle: Point::new(640.0, PADDLE_Y),
+            transient_capacity,
+            paddle: Vec2::new(640.0, PADDLE_Y),
             phase: Phase::Ready,
             lives: 3,
         };
         state.reset();
-        Ok(Arena::new(root).push(state))
+        let image = hud::image();
+        (platform.upload_texture)(
+            platform.context,
+            TextureUpload {
+                id: TextureId(0),
+                width: u32::from(image.width),
+                height: u32::from(image.height),
+                rgba: image.rgba,
+            },
+        )
+        .map_err(StartupError::Texture)?;
+        Ok(Arena::new(memory.bytes).push(state))
     }
 
-    fn update<'p, 'a>(
+    fn update<'a, Context>(
         &mut self,
-        platform: &mut impl Platform<'p>,
+        input: &Input<'_>,
         memory: TransientMemory<'a>,
-        input: &FrameInput<'_>,
-    ) -> FrameOutput<'a> {
-        if input.events().contains(&PlatformEvent::CloseRequested) {
-            platform.request_exit();
+        platform: &mut Platform<'_, Context>,
+    ) -> Result<Frame<'a>, FrameError> {
+        if memory.bytes.len() < self.transient_capacity {
+            return Err(FrameError::InsufficientTransientMemory {
+                required: self.transient_capacity,
+                available: memory.bytes.len(),
+            });
         }
-        let dt = input.dt.seconds().min(0.05);
-        let start = pressed(input.controller.start);
+        if input.events.contains(&PlatformEvent::CloseRequested) {
+            (platform.exit)(platform.context);
+        }
+        let dt = input.elapsed.as_secs_f32().min(0.05);
+        let start = pressed(input.actions.start);
         if matches!(self.phase, Phase::Won | Phase::Lost) {
             if start {
                 self.reset();
             }
         } else {
-            let right = u8::from(input.controller.move_right.ended() == ButtonPosition::Down);
-            let left = u8::from(input.controller.move_left.ended() == ButtonPosition::Down);
-            let x = self.paddle.x() + (f32::from(right) - f32::from(left)) * 700.0 * dt;
-            self.paddle = Point::new(x.clamp(LEFT + PADDLE_HALF, RIGHT - PADDLE_HALF), PADDLE_Y);
+            let right = u8::from(input.actions.move_right.ended == ButtonPosition::Down);
+            let left = u8::from(input.actions.move_left.ended == ButtonPosition::Down);
+            let movement = if right != 0 || left != 0 {
+                f32::from(right) - f32::from(left)
+            } else if input.actions.movement.x.is_finite() {
+                input.actions.movement.x.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            };
+            let x = self.paddle.x + movement * 700.0 * dt;
+            self.paddle = Vec2::new(x.clamp(LEFT + PADDLE_HALF, RIGHT - PADDLE_HALF), PADDLE_Y);
             if matches!(self.phase, Phase::Ready) && start {
                 self.phase = Phase::Playing {
                     ball: self.ready_ball(),
@@ -185,19 +182,17 @@ impl Game for GameState {
                 advance(self, dt);
             }
         }
-        let output = draw(self, memory);
-        self.font_uploaded = true;
-        output
+        Ok(draw(self, memory))
     }
 
-    fn update_audio<'p>(&mut self, _platform: &mut impl Platform<'p>, mut buffer: AudioBuffer<'_>) {
-        buffer.frames_mut().fill(StereoFrame::default());
+    fn update_audio(&mut self, _sample_rate_hz: u32, samples: &mut [StereoSample]) {
+        samples.fill(StereoSample { left: 0, right: 0 });
     }
 }
 
 fn pressed(button: ButtonState) -> bool {
-    button.half_transitions() > 1
-        || (button.ended() == ButtonPosition::Down && button.half_transitions() != 0)
+    button.half_transitions > 1
+        || (button.ended == ButtonPosition::Down && button.half_transitions != 0)
 }
 
 #[derive(Clone, Copy)]
@@ -232,11 +227,10 @@ fn advance(state: &mut GameState, mut remaining: f32) {
         return;
     };
     for _ in 0..MAX_IMPACTS {
-        let position = Vec2::new(ball.x(), ball.y());
         let delta = velocity * remaining;
         let Some(hit) = find_hit(state, ball, delta) else {
-            ball = point(position + delta);
-            if ball.y() > 720.0 + BALL_HALF {
+            ball = ball + delta;
+            if ball.y > 720.0 + BALL_HALF {
                 state.lives -= 1;
                 state.phase = if state.lives == 0 {
                     Phase::Lost
@@ -248,10 +242,10 @@ fn advance(state: &mut GameState, mut remaining: f32) {
             }
             return;
         };
-        ball = point(position.lerp(position + delta, hit.fraction));
+        ball = ball.lerp(ball + delta, hit.fraction);
         match hit.target {
             Target::Paddle => {
-                let offset = ((ball.x() - state.paddle.x()) / PADDLE_HALF).clamp(-1.0, 1.0);
+                let offset = ((ball.x - state.paddle.x) / PADDLE_HALF).clamp(-1.0, 1.0);
                 velocity = Vec2::new(0.0, -1.0).rotate(Radians::new(offset * 1.05)) * BALL_SPEED;
             }
             Target::Wall | Target::Brick(_) => {
@@ -281,19 +275,19 @@ fn advance(state: &mut GameState, mut remaining: f32) {
     panic!("frame collision budget exhausted");
 }
 
-fn find_hit(state: &GameState, ball: Point, delta: Vec2) -> Option<Hit> {
+fn find_hit(state: &GameState, ball: Vec2, delta: Vec2) -> Option<Hit> {
     let mut hit = None;
     if delta.x < 0.0 {
         consider(
             &mut hit,
-            (LEFT + BALL_HALF - ball.x()) / delta.x,
+            (LEFT + BALL_HALF - ball.x) / delta.x,
             Vec2::new(1.0, 0.0),
             Target::Wall,
         );
     } else if delta.x > 0.0 {
         consider(
             &mut hit,
-            (RIGHT - BALL_HALF - ball.x()) / delta.x,
+            (RIGHT - BALL_HALF - ball.x) / delta.x,
             Vec2::new(-1.0, 0.0),
             Target::Wall,
         );
@@ -301,14 +295,14 @@ fn find_hit(state: &GameState, ball: Point, delta: Vec2) -> Option<Hit> {
     if delta.y < 0.0 {
         consider(
             &mut hit,
-            (TOP + BALL_HALF - ball.y()) / delta.y,
+            (TOP + BALL_HALF - ball.y) / delta.y,
             Vec2::new(0.0, 1.0),
             Target::Wall,
         );
     } else if delta.y > 0.0 {
-        let fraction = (PADDLE_Y - BALL_HALF - ball.y()) / delta.y;
-        let x = ball.x() + delta.x * fraction;
-        if (x - state.paddle.x()).abs() <= PADDLE_HALF + BALL_HALF {
+        let fraction = (PADDLE_Y - BALL_HALF - ball.y) / delta.y;
+        let x = ball.x + delta.x * fraction;
+        if (x - state.paddle.x).abs() <= PADDLE_HALF + BALL_HALF {
             consider(&mut hit, fraction, Vec2::new(0.0, -1.0), Target::Paddle);
         }
     }
@@ -320,12 +314,10 @@ fn find_hit(state: &GameState, ball: Point, delta: Vec2) -> Option<Hit> {
         if batch[0].is_none() {
             break;
         }
-        let centers = Vec2x4::from_array(batch.map(|brick| {
-            brick.map_or(Vec2::ZERO, |(_, brick)| {
-                Vec2::new(brick.center.x(), brick.center.y())
-            })
-        }));
-        let offsets = Vec2x4::from_array([Vec2::new(ball.x(), ball.y()); 4]) - centers;
+        let centers = Vec2x4::from_array(
+            batch.map(|brick| brick.map_or(Vec2::ZERO, |(_, brick)| brick.center)),
+        );
+        let offsets = Vec2x4::from_array([ball; 4]) - centers;
         let distances = offsets.dot(offsets);
         let brick_distances = batch.into_iter().zip(distances);
         for (brick, distance) in brick_distances {
@@ -340,23 +332,23 @@ fn find_hit(state: &GameState, ball: Point, delta: Vec2) -> Option<Hit> {
     hit
 }
 
-fn sweep(ball: Point, delta: Vec2, center: Point, half: Vec2) -> Option<(f32, Vec2)> {
+fn sweep(ball: Vec2, delta: Vec2, center: Vec2, half: Vec2) -> Option<(f32, Vec2)> {
     let mut entry = 0.0_f32;
     let mut exit = 1.0_f32;
     let mut normal = Vec2::ZERO;
     for (position, movement, low, high, axis) in [
         (
-            ball.x(),
+            ball.x,
             delta.x,
-            center.x() - half.x,
-            center.x() + half.x,
+            center.x - half.x,
+            center.x + half.x,
             Vec2::new(1.0, 0.0),
         ),
         (
-            ball.y(),
+            ball.y,
             delta.y,
-            center.y() - half.y,
-            center.y() + half.y,
+            center.y - half.y,
+            center.y + half.y,
             Vec2::new(0.0, 1.0),
         ),
     ] {
@@ -381,7 +373,7 @@ fn sweep(ball: Point, delta: Vec2, center: Point, half: Vec2) -> Option<(f32, Ve
     (normal.dot(delta) < 0.0).then_some((entry, normal))
 }
 
-fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
+fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
     let TransientMemory { bytes } = memory;
     let mut arena = Arena::new(bytes);
     let storage = arena.push_slice(MAX_RENDER_COMMANDS, RenderCommand::SetClip(None));
@@ -390,39 +382,19 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
     let (ball, status) = match state.phase {
         Phase::Ready => (
             Some(state.ready_ball()),
-            Color {
-                red: 255,
-                green: 190,
-                blue: 110,
-                alpha: 255,
-            },
+            Vec4::new(1.0, 190.0 / 255.0, 110.0 / 255.0, 1.0),
         ),
         Phase::Playing { ball, .. } => (
             Some(ball),
-            Color {
-                red: 112,
-                green: 230,
-                blue: 204,
-                alpha: 255,
-            },
+            Vec4::new(112.0 / 255.0, 230.0 / 255.0, 204.0 / 255.0, 1.0),
         ),
         Phase::Won => (
             None,
-            Color {
-                red: 112,
-                green: 230,
-                blue: 204,
-                alpha: 255,
-            },
+            Vec4::new(112.0 / 255.0, 230.0 / 255.0, 204.0 / 255.0, 1.0),
         ),
         Phase::Lost => (
             None,
-            Color {
-                red: 248,
-                green: 112,
-                blue: 108,
-                alpha: 255,
-            },
+            Vec4::new(248.0 / 255.0, 112.0 / 255.0, 108.0 / 255.0, 1.0),
         ),
     };
     let label = match state.phase {
@@ -436,17 +408,17 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
     if let Some(ball) = ball {
         rect(
             &mut commands,
-            Point::new(ball.x() - BALL_HALF, ball.y() - BALL_HALF),
-            Size::new(BALL_HALF * 2.0, BALL_HALF * 2.0),
-            Color::WHITE,
+            ball - Vec2::new(BALL_HALF, BALL_HALF),
+            Vec2::new(BALL_HALF * 2.0, BALL_HALF * 2.0),
+            Vec4::new(1.0, 1.0, 1.0, 1.0),
         );
         if matches!(state.phase, Phase::Ready) {
             let aim = Vec2::new(0.0, -48.0).rotate(Radians::new(0.35));
             commands
                 .push(RenderCommand::DrawLine {
                     start: ball,
-                    end: point(Vec2::new(ball.x(), ball.y()) + aim),
-                    width: StrokeWidth::new(2.0),
+                    end: ball + aim,
+                    width: 2.0,
                     color: status,
                 })
                 .expect("frame command budget includes the aim line");
@@ -454,95 +426,56 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> FrameOutput<'a> {
     } else {
         rect(
             &mut commands,
-            Point::new(480.0, 352.0),
-            Size::new(320.0, 16.0),
+            Vec2::new(480.0, 352.0),
+            Vec2::new(320.0, 16.0),
             status,
         );
     }
-    let frame = Frame::new(
-        Canvas::new(1280, 720),
-        Color {
-            red: 16,
-            green: 23,
-            blue: 34,
-            alpha: 255,
-        },
-        commands.finish(),
-    );
-    let uploads = if state.font_uploaded {
-        &[][..]
-    } else {
-        &arena.push_slice(
-            1,
-            TextureUpload {
-                id: TextureId::new(0),
-                image: hud::image(),
-            },
-        )[..]
-    };
-    FrameOutput::new(frame, uploads)
+    Frame {
+        canvas_size: Vec2::new(1280.0, 720.0),
+        clear_color: Vec4::new(16.0 / 255.0, 23.0 / 255.0, 34.0 / 255.0, 1.0),
+        commands: commands.finish(),
+    }
 }
 
 fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) {
-    let wall = Color {
-        red: 73,
-        green: 87,
-        blue: 108,
-        alpha: 255,
-    };
+    let wall = Vec4::new(73.0 / 255.0, 87.0 / 255.0, 108.0 / 255.0, 1.0);
     for (x, y, width, height) in [
         (16.0, 64.0, 1248.0, 8.0),
         (16.0, TOP, 8.0, 632.0),
         (RIGHT, TOP, 8.0, 632.0),
     ] {
-        rect(commands, Point::new(x, y), Size::new(width, height), wall);
+        rect(commands, Vec2::new(x, y), Vec2::new(width, height), wall);
     }
     for (_, brick) in state.bricks.iter() {
         rect(
             commands,
-            Point::new(
-                brick.center.x() - BRICK_HALF.x,
-                brick.center.y() - BRICK_HALF.y,
-            ),
-            Size::new(BRICK_HALF.x * 2.0, BRICK_HALF.y * 2.0),
+            brick.center - BRICK_HALF,
+            BRICK_HALF * 2.0,
             brick.color,
         );
     }
     rect(
         commands,
-        Point::new(state.paddle.x() - PADDLE_HALF, PADDLE_Y),
-        Size::new(PADDLE_HALF * 2.0, 14.0),
-        Color {
-            red: 227,
-            green: 238,
-            blue: 245,
-            alpha: 255,
-        },
+        Vec2::new(state.paddle.x - PADDLE_HALF, PADDLE_Y),
+        Vec2::new(PADDLE_HALF * 2.0, 14.0),
+        Vec4::new(227.0 / 255.0, 238.0 / 255.0, 245.0 / 255.0, 1.0),
     );
     for life in 0..state.lives {
         rect(
             commands,
-            Point::new(28.0 + f32::from(life) * 24.0, 28.0),
-            Size::new(14.0, 14.0),
-            Color {
-                red: 112,
-                green: 230,
-                blue: 204,
-                alpha: 255,
-            },
+            Vec2::new(28.0 + f32::from(life) * 24.0, 28.0),
+            Vec2::new(14.0, 14.0),
+            Vec4::new(112.0 / 255.0, 230.0 / 255.0, 204.0 / 255.0, 1.0),
         );
     }
 }
 
-fn rect(commands: &mut RenderCommands<'_>, origin: Point, size: Size, color: Color) {
+fn rect(commands: &mut RenderCommands<'_>, origin: Vec2, size: Vec2, color: Vec4) {
     commands
         .push(RenderCommand::DrawRect {
-            rect: Rect::new(origin, size),
+            rect: Rect { origin, size },
             style: RectStyle::Filled(color),
         })
         .expect("frame command budget includes court rectangles");
-}
-
-fn point(value: Vec2) -> Point {
-    Point::new(value.x, value.y)
 }

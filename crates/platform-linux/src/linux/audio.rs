@@ -3,10 +3,10 @@ use std::ops::Range;
 use alsa::pcm::{Access, Format, Frames, HwParams, PCM, State};
 use alsa::{Direction, ValueOr};
 use platform_api::Game;
-use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, SampleRate, StereoFrame};
+use platform_api::audio::StereoSample;
 use rustix::io::Errno;
 
-use super::services::Services;
+use crate::limits::{MAX_AUDIO_FRAMES, MAX_SAMPLE_RATE_HZ};
 
 const BYTES_PER_FRAME: usize = 4;
 const TARGET_QUEUE_MILLISECONDS: u32 = 50;
@@ -14,17 +14,14 @@ const TARGET_QUEUE_MILLISECONDS: u32 = 50;
 pub(super) struct Audio {
     pcm: PCM,
     device_frames: Frames,
-    sample_rate: SampleRate,
-    frames: Vec<StereoFrame>,
+    sample_rate: u32,
+    frames: Vec<StereoSample>,
     encoded: Vec<u8>,
     pending: Range<usize>,
 }
 
 impl Audio {
-    pub(super) fn start(
-        state: &mut impl Game,
-        platform: &mut Services<'_>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub(super) fn start(state: &mut impl Game) -> Result<Self, Box<dyn std::error::Error>> {
         let pcm = PCM::open(c"default", Direction::Playback, true)?;
         let (sample_rate, target, device_frames) = {
             let parameters = HwParams::any(&pcm)?;
@@ -36,14 +33,15 @@ impl Audio {
             parameters.set_buffer_time_near(100_000, ValueOr::Nearest)?;
             pcm.hw_params(&parameters)?;
             let actual = pcm.hw_params_current()?;
-            let sample_rate = SampleRate::from_hz(actual.get_rate()?)
-                .ok_or("audio sample rate exceeds the supported range")?;
-            let target =
-                usize::try_from((sample_rate.hz() * TARGET_QUEUE_MILLISECONDS).div_ceil(1000))?;
+            let sample_rate = actual.get_rate()?;
+            if !(1..=MAX_SAMPLE_RATE_HZ).contains(&sample_rate) {
+                return Err("audio sample rate exceeds the supported range".into());
+            }
+            let target = usize::try_from((sample_rate * TARGET_QUEUE_MILLISECONDS).div_ceil(1000))?;
             let buffer_size = actual.get_buffer_size()?;
             if target > MAX_AUDIO_FRAMES
                 || buffer_size < Frames::try_from(target)?
-                || buffer_size > Frames::from(sample_rate.hz()) / 2
+                || buffer_size > Frames::from(sample_rate) / 2
                 || actual.get_period_size()? > Frames::try_from(target)?
             {
                 return Err("audio device cannot satisfy the queue budget".into());
@@ -56,7 +54,7 @@ impl Audio {
         };
         let mut frames = Vec::new();
         frames.try_reserve_exact(target)?;
-        frames.resize(target, StereoFrame::default());
+        frames.resize(target, StereoSample { left: 0, right: 0 });
         let mut encoded = Vec::new();
         encoded.try_reserve_exact(target * BYTES_PER_FRAME)?;
         encoded.resize(target * BYTES_PER_FRAME, 0);
@@ -69,26 +67,22 @@ impl Audio {
             encoded,
             pending: 0..0,
         };
-        audio.update(state, platform)?;
+        audio.update(state)?;
         Ok(audio)
     }
 
-    pub(super) fn update(
-        &mut self,
-        state: &mut impl Game,
-        platform: &mut Services<'_>,
-    ) -> alsa::Result<()> {
-        match self.fill(state, platform) {
+    pub(super) fn update(&mut self, state: &mut impl Game) -> alsa::Result<()> {
+        match self.fill(state) {
             Err(error) if error.errno() == Errno::PIPE.raw_os_error() => {
                 self.pcm.prepare()?;
                 self.pending = 0..0;
-                self.fill(state, platform)
+                self.fill(state)
             }
             result => result,
         }
     }
 
-    fn fill(&mut self, state: &mut impl Game, platform: &mut Services<'_>) -> alsa::Result<()> {
+    fn fill(&mut self, state: &mut impl Game) -> alsa::Result<()> {
         if !self.pending.is_empty() {
             self.write_pending()?;
             if !self.pending.is_empty() {
@@ -109,10 +103,7 @@ impl Audio {
             return Ok(());
         }
         let frames = &mut self.frames[..requested];
-        state.update_audio(platform, AudioBuffer::new(self.sample_rate, frames));
-        if platform.exit_requested() {
-            return Ok(());
-        }
+        state.update_audio(self.sample_rate, frames);
         let encoded_frames = frames
             .iter()
             .zip(self.encoded.as_chunks_mut::<BYTES_PER_FRAME>().0);

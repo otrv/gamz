@@ -1,30 +1,71 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("the CLI platform is implemented only for Linux");
 
+#[path = "../controls.rs"]
+mod controls;
+#[path = "../files.rs"]
+mod files;
+mod frame;
 mod input;
+#[path = "../limits.rs"]
+mod limits;
 #[path = "../memory.rs"]
 mod memory;
 mod output;
-#[path = "../linux/services.rs"]
-mod services;
+#[path = "../textures.rs"]
+mod textures;
+#[path = "../window.rs"]
+mod window;
 
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
+use std::mem::MaybeUninit;
 use std::process::ExitCode;
 
-use platform_api::Game;
-use platform_api::audio::{AudioBuffer, MAX_AUDIO_FRAMES, StereoFrame};
-use platform_api::input::FrameInput;
+use platform_api::audio::StereoSample;
+use platform_api::input::{self as contract, PlatformEvent};
 use platform_api::memory::{PersistentMemory, TransientMemory};
-use platform_api::services::{MAX_EVENTS, MAX_REQUESTS, PlatformEvent, WindowChange, WindowStatus};
+use platform_api::window::{WindowMode, WindowState};
+use platform_api::{Game, Platform};
 use serde::Serialize;
 
+use files::{Completions, Files};
 use input::Input;
+use limits::{MAX_AUDIO_FRAMES, MAX_EVENTS};
 use memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
 use output::{AudioOutput, FrameOutput, Startup, Uploads};
-use services::Services;
+use textures::Textures;
+use window::ModeRequests;
 
 const MAX_INPUT_BYTES: usize = 16 * 1024;
 const MAX_MEMORY_BYTES: usize = 1024 * 1024 * 1024;
+
+struct Context {
+    files: Files,
+    textures: Textures,
+    modes: ModeRequests,
+    exit: bool,
+}
+
+impl Context {
+    fn api(&mut self) -> Platform<'_, Self> {
+        Platform {
+            context: self,
+            read_file: |context, request| context.files.read(request),
+            write_file: |context, request| context.files.write(request),
+            cancel: |context, id| {
+                if id.0 % 2 == 0 {
+                    context.modes.cancel(id)
+                } else {
+                    context.files.cancel(id)
+                }
+            },
+            upload_texture: |context, upload| context.textures.upload(upload),
+            release_texture: |context, id| context.textures.release(id),
+            set_window_mode: |context, mode| context.modes.request(mode),
+            exit: |context| context.exit = true,
+        }
+    }
+}
 
 fn main() -> ExitCode {
     match run() {
@@ -60,29 +101,55 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     persistent.try_reserve_exact(persistent_bytes)?;
     let mut transient = Vec::<u8>::new();
     transient.try_reserve_exact(transient_bytes)?;
-    let mut audio = Vec::new();
-    audio.try_reserve_exact(MAX_AUDIO_FRAMES)?;
-    audio.resize(MAX_AUDIO_FRAMES, StereoFrame::default());
     let mut output = BufWriter::new(io::stdout().lock());
-    let mut services = Services::new();
+    let mut context = Context {
+        files: Files::new(),
+        textures: Textures::new(),
+        modes: ModeRequests::new(),
+        exit: false,
+    };
     let state = game::GameState::initialize(
         PersistentMemory {
             bytes: &mut persistent.spare_capacity_mut()[..persistent_bytes],
         },
         transient_bytes,
-        &mut services,
-    )?;
+        &mut context.api(),
+    )
+    .map_err(|error| format!("game initialization: {error:?}"))?;
     write_line(
         &mut output,
         &Startup {
-            uploads: Uploads(&[]),
+            uploads: Uploads(&context.textures.uploads),
         },
     )?;
+    context.textures.clear_pending();
+    drive(
+        state,
+        &mut context,
+        &mut transient.spare_capacity_mut()[..transient_bytes],
+        &mut output,
+    )
+}
 
+fn drive(
+    state: &mut game::GameState,
+    context: &mut Context,
+    transient: &mut [MaybeUninit<u8>],
+    output: &mut impl Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut audio = vec![StereoSample { left: 0, right: 0 }; MAX_AUDIO_FRAMES];
+    let mut completions = Completions::new();
+    let mut window = WindowState {
+        width: 1280,
+        height: 720,
+        framebuffer_width: 1280,
+        framebuffer_height: 720,
+        focused: true,
+        mode: WindowMode::Windowed,
+    };
     let mut input = BufReader::new(io::stdin().lock());
     let mut line = Vec::with_capacity(MAX_INPUT_BYTES + 1);
-    let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
-    while !services.exit_requested() {
+    while !context.exit {
         line.clear();
         let count = input
             .by_ref()
@@ -99,31 +166,55 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 dt,
                 controller,
                 close_requested,
+                pointer,
+                scroll,
+                text,
             } => {
+                context.modes.apply(window.mode, |mode| window.mode = mode);
+                context.files.collect(&mut completions);
+                let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
+                let mut count = completions.events(&mut events);
+                count += context.modes.events(&mut events[count..]);
                 if close_requested {
-                    services.request_close();
+                    events[count] = PlatformEvent::CloseRequested;
+                    count += 1;
                 }
-                apply_window_requests(&mut services);
-                let count = services.poll_events(&mut events);
-                let input =
-                    FrameInput::new(dt, controller, services.window_state(), &events[..count]);
-                let frame = state.update(
-                    &mut services,
-                    TransientMemory {
-                        bytes: &mut transient.spare_capacity_mut()[..transient_bytes],
+                let input = contract::Input {
+                    elapsed: dt,
+                    actions: controller,
+                    pointer,
+                    scroll,
+                    text: &text,
+                    window,
+                    events: &events[..count],
+                };
+                let frame = state
+                    .update(
+                        &input,
+                        TransientMemory { bytes: transient },
+                        &mut context.api(),
+                    )
+                    .map_err(|error| format!("game frame: {error:?}"))?;
+                frame::validate(&frame)?;
+                write_line(
+                    output,
+                    &FrameOutput {
+                        frame: &frame,
+                        uploads: Uploads(&context.textures.uploads),
+                        releases: &context.textures.releases,
                     },
-                    &input,
-                );
-                write_line(&mut output, &FrameOutput(&frame))?;
+                )?;
+                context.textures.clear_pending();
+                context.files.recycle(&mut completions);
             }
             Input::Audio {
                 sample_rate,
                 frames,
             } => {
                 let frames = &mut audio[..frames];
-                state.update_audio(&mut services, AudioBuffer::new(sample_rate, frames));
+                state.update_audio(sample_rate, frames);
                 write_line(
-                    &mut output,
+                    output,
                     &AudioOutput {
                         sample_rate,
                         frames,
@@ -133,28 +224,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
-}
-
-fn apply_window_requests(services: &mut Services<'_>) {
-    for _ in 0..MAX_REQUESTS {
-        let Some((id, change)) = services.take_window_request() else {
-            break;
-        };
-        let mut state = services.window_state();
-        match change {
-            WindowChange::Size { width, height } => {
-                state.width = width;
-                state.height = height;
-                state.framebuffer_width = width;
-                state.framebuffer_height = height;
-            }
-            WindowChange::Mode(mode) => state.mode = mode,
-            WindowChange::Cursor(cursor) => state.cursor = cursor,
-            WindowChange::Title(_) => {}
-        }
-        services.set_window_state(state);
-        services.complete_window(id, WindowStatus::Applied);
-    }
 }
 
 fn write_line(

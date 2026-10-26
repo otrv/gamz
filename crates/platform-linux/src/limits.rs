@@ -1,0 +1,13 @@
+pub(crate) const MAX_REQUESTS: usize = 8;
+pub(crate) const MAX_PATH_BYTES: usize = 256;
+pub(crate) const MAX_IO_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const MAX_EVENTS: usize = MAX_REQUESTS * 2 + 3;
+pub(crate) const MAX_COMMANDS: usize = 16_384;
+pub(crate) const MAX_QUADS: usize = 65_536;
+pub(crate) const MAX_TEXTURES: usize = 64;
+pub(crate) const MAX_TEXTURE_SIDE: u32 = 2048;
+pub(crate) const MAX_TEXTURE_BYTES: usize = 64 * 1024 * 1024;
+pub(crate) const MAX_AUDIO_FRAMES: usize = 16_384;
+pub(crate) const MAX_SAMPLE_RATE_HZ: u32 = 192_000;
+pub(crate) const MAX_TEXT_BYTES: usize = 4096;

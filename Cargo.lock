@@ -1189,6 +1189,7 @@ version = "0.1.0"
 dependencies = [
  "alsa",
  "game",
+ "math",
  "platform-api",
  "pollster",
  "renderer",
@@ -1339,6 +1340,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 name = "renderer"
 version = "0.1.0"
 dependencies = [
+ "math",
  "num-traits",
  "platform-api",
  "wgpu",

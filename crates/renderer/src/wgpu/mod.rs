@@ -1,16 +1,23 @@
 mod failure;
 mod geometry;
+mod validation;
 
 use failure::Failure;
 use geometry::{Geometry, VERTEX_BYTES, Viewport};
-use platform_api::render::{
-    Frame, Image, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURES, Sampling, TextureUpload,
-};
+use platform_api::render::{Frame, Sampling, TextureError, TextureId, TextureUpload};
 use std::fmt;
 use wgpu::util::DeviceExt;
 
-const GPU_QUADS: usize = MAX_QUADS + 1;
 const FRAMES_IN_FLIGHT: usize = 2;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    pub commands: usize,
+    pub quads: usize,
+    pub textures: usize,
+    pub texture_side: u32,
+    pub texture_bytes: usize,
+}
 
 #[derive(Debug)]
 pub struct RendererError(String);
@@ -37,8 +44,9 @@ pub struct FrameStats {
 
 struct Texture {
     groups: [wgpu::BindGroup; 2],
-    width: u16,
-    height: u16,
+    width: u32,
+    height: u32,
+    bytes: usize,
 }
 
 pub struct Renderer {
@@ -52,7 +60,8 @@ pub struct Renderer {
     samplers: [wgpu::Sampler; 2],
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
-    textures: [Option<Texture>; MAX_TEXTURES],
+    textures: Vec<Option<Texture>>,
+    limits: Limits,
     white: Texture,
     texture_bytes: usize,
     geometry: Geometry,
@@ -67,7 +76,19 @@ impl Renderer {
         target: impl Into<wgpu::SurfaceTarget<'static>>,
         width: u32,
         height: u32,
+        limits: Limits,
     ) -> Result<Self, RendererError> {
+        let gpu_quads = limits
+            .quads
+            .checked_add(1)
+            .ok_or_else(|| error("quad limit overflow"))?;
+        let vertex_bytes = gpu_quads
+            .checked_mul(4 * VERTEX_BYTES)
+            .ok_or_else(|| error("vertex limit overflow"))?;
+        let quad_count = u32::try_from(gpu_quads).map_err(error)?;
+        if quad_count > u32::MAX / 6 || limits.textures > usize::from(u16::MAX) + 1 {
+            return Err(error("renderer limits exceed index ranges"));
+        }
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance.create_surface(target).map_err(error)?;
         let adapter = instance
@@ -85,6 +106,10 @@ impl Renderer {
             .await
             .map_err(error)?;
         let failure = Failure::new(&device);
+        let buffer_limit = device.limits().max_buffer_size;
+        if u64::try_from(vertex_bytes).map_err(error)? > buffer_limit {
+            return Err(error("renderer buffers exceed device limits"));
+        }
         let config = surface_config(&surface, &adapter, width, height)?;
         let pipeline = make_pipeline(&device, config.format.add_srgb_suffix());
         failure.check()?;
@@ -101,33 +126,28 @@ impl Renderer {
         });
         let vertices = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vertices"),
-            size: u64::try_from(GPU_QUADS * 4 * VERTEX_BYTES).unwrap(),
+            size: u64::try_from(vertex_bytes).map_err(error)?,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let mut index_bytes = Vec::new();
-        index_bytes
-            .try_reserve_exact(GPU_QUADS * 6 * 4)
-            .map_err(error)?;
-        for quad in 0..u32::try_from(GPU_QUADS).unwrap() {
-            for offset in [0, 1, 2, 0, 2, 3] {
-                index_bytes.extend_from_slice(&(quad * 4 + offset).to_ne_bytes());
-            }
-        }
-        let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("indices"),
-            contents: &index_bytes,
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let indices = make_indices(&device, quad_count)?;
         let white = make_texture(
             &device,
             &queue,
             &layout,
             &samplers,
-            Image::new(1, 1, &[255; 4]).unwrap(),
+            TextureUpload {
+                id: TextureId(0),
+                width: 1,
+                height: 1,
+                rgba: &[255; 4],
+            },
             &failure,
         )?;
         failure.check()?;
+        let mut textures = Vec::new();
+        textures.try_reserve_exact(limits.textures).map_err(error)?;
+        textures.resize_with(limits.textures, || None);
         let mut renderer = Self {
             surface,
             device,
@@ -139,10 +159,11 @@ impl Renderer {
             samplers,
             vertices,
             indices,
-            textures: std::array::from_fn(|_| None),
+            textures,
+            limits,
             white,
             texture_bytes: 0,
-            geometry: Geometry::new()?,
+            geometry: Geometry::new(gpu_quads)?,
             failure,
             pending: std::array::from_fn(|_| None),
             upload_pending: None,
@@ -168,54 +189,68 @@ impl Renderer {
         self.failure.check()
     }
 
-    pub fn upload_textures(&mut self, uploads: &[TextureUpload<'_>]) -> Result<(), RendererError> {
-        self.failure.check()?;
-        if uploads.is_empty() {
-            return Ok(());
+    pub fn upload_texture(&mut self, upload: TextureUpload<'_>) -> Result<(), TextureError> {
+        let slot = usize::from(upload.id.0);
+        let previous = self.textures.get(slot).ok_or(TextureError::InvalidId)?;
+        validation::image(upload)?;
+        if upload.width > self.limits.texture_side
+            || upload.height > self.limits.texture_side
+            || upload.width > self.device.limits().max_texture_dimension_2d
+            || upload.height > self.device.limits().max_texture_dimension_2d
+        {
+            return Err(TextureError::CapacityExceeded);
         }
+        let previous_bytes = previous.as_ref().map_or(0, |texture| texture.bytes);
+        let total = (self.texture_bytes - previous_bytes)
+            .checked_add(upload.rgba.len())
+            .filter(|&total| total <= self.limits.texture_bytes)
+            .ok_or(TextureError::CapacityExceeded)?;
+        self.failure
+            .check()
+            .map_err(|_| TextureError::Unavailable)?;
         if let Some(submission) = self.upload_pending.take() {
-            self.failure.wait(&self.device, Some(submission))?;
-        }
-        assert!(uploads.len() <= MAX_TEXTURES);
-        assert!(
-            uploads
-                .iter()
-                .map(|upload| upload.image.rgba().len())
-                .sum::<usize>()
-                <= MAX_TEXTURE_BYTES
-        );
-        for &upload in uploads {
-            self.upload_texture(upload)?;
-        }
-        self.upload_pending = Some(self.queue.submit([]));
-        self.failure.check()
-    }
-
-    fn upload_texture(&mut self, upload: TextureUpload<'_>) -> Result<(), RendererError> {
-        self.failure.check()?;
-        let slot = upload.id.index();
-        let previous_bytes = self.textures[slot].as_ref().map_or(0, |texture| {
-            usize::from(texture.width) * usize::from(texture.height) * 4
-        });
-        let total = self.texture_bytes - previous_bytes + upload.image.rgba().len();
-        if total > MAX_TEXTURE_BYTES {
-            return Err(error("texture budget exhausted"));
+            self.failure
+                .wait(&self.device, Some(submission))
+                .map_err(|_| TextureError::Unavailable)?;
         }
         let texture = make_texture(
             &self.device,
             &self.queue,
             &self.layout,
             &self.samplers,
-            upload.image,
+            upload,
             &self.failure,
-        )?;
-        self.failure.check()?;
+        )
+        .map_err(|_| TextureError::Unavailable)?;
+        self.upload_pending = Some(self.queue.submit([]));
+        self.failure
+            .check()
+            .map_err(|_| TextureError::Unavailable)?;
         self.textures[slot] = Some(texture);
         self.texture_bytes = total;
         Ok(())
     }
 
+    pub fn release_texture(&mut self, id: TextureId) -> Result<(), TextureError> {
+        let slot = usize::from(id.0);
+        let texture = self
+            .textures
+            .get(slot)
+            .and_then(Option::as_ref)
+            .ok_or(TextureError::InvalidId)?;
+        let bytes = texture.bytes;
+        self.failure
+            .wait(&self.device, None)
+            .map_err(|_| TextureError::Unavailable)?;
+        self.textures[slot] = None;
+        self.texture_bytes -= bytes;
+        self.upload_pending = None;
+        self.pending = std::array::from_fn(|_| None);
+        Ok(())
+    }
+
     pub fn draw(&mut self, frame: &Frame<'_>) -> Result<Option<FrameStats>, RendererError> {
+        validation::frame(frame, self.limits, &self.textures)?;
         self.failure.check()?;
         if let Some(submission) = self.pending[self.next_submission].take() {
             self.failure.wait(&self.device, Some(submission))?;
@@ -223,11 +258,12 @@ impl Renderer {
         if !self.drawable {
             return Ok(None);
         }
-        let Some(viewport) = Viewport::new(frame.canvas, self.config.width, self.config.height)
+        let Some(viewport) =
+            Viewport::new(frame.canvas_size, self.config.width, self.config.height)
         else {
             return Ok(None);
         };
-        self.geometry.build(frame, viewport, &self.textures);
+        self.geometry.build(frame, viewport, &self.textures)?;
         let (output, suboptimal) = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(output) => (output, false),
             wgpu::CurrentSurfaceTexture::Suboptimal(output) => (output, true),
@@ -298,12 +334,36 @@ impl Renderer {
             self.resize(self.config.width, self.config.height)?;
         }
         Ok(Some(FrameStats {
-            commands: frame.commands().len(),
+            commands: frame.commands.len(),
             quads: (self.geometry.bytes.len() / (4 * VERTEX_BYTES)).saturating_sub(1),
             batches: self.geometry.batches.len(),
             vertex_bytes: self.geometry.bytes.len(),
         }))
     }
+}
+
+fn make_indices(device: &wgpu::Device, quad_count: u32) -> Result<wgpu::Buffer, RendererError> {
+    let size = usize::try_from(quad_count)
+        .map_err(error)?
+        .checked_mul(6 * 4)
+        .ok_or_else(|| error("index limit overflow"))?;
+    if u64::try_from(size).map_err(error)? > device.limits().max_buffer_size {
+        return Err(error("index buffer exceeds device limits"));
+    }
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(size).map_err(error)?;
+    for quad in 0..quad_count {
+        for offset in [0, 1, 2, 0, 2, 3] {
+            bytes.extend_from_slice(&(quad * 4 + offset).to_ne_bytes());
+        }
+    }
+    Ok(
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("indices"),
+            contents: &bytes,
+            usage: wgpu::BufferUsages::INDEX,
+        }),
+    )
 }
 
 fn surface_config(
@@ -338,12 +398,12 @@ fn make_texture(
     queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
     samplers: &[wgpu::Sampler; 2],
-    image: Image<'_>,
+    image: TextureUpload<'_>,
     failure: &Failure,
 ) -> Result<Texture, RendererError> {
     let size = wgpu::Extent3d {
-        width: u32::from(image.width()),
-        height: u32::from(image.height()),
+        width: image.width,
+        height: image.height,
         depth_or_array_layers: 1,
     };
     let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -364,7 +424,7 @@ fn make_texture(
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,
         },
-        image.rgba(),
+        image.rgba,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(size.width * 4),
@@ -393,8 +453,9 @@ fn make_texture(
     failure.check()?;
     Ok(Texture {
         groups,
-        width: image.width(),
-        height: image.height(),
+        width: image.width,
+        height: image.height,
+        bytes: image.rgba.len(),
     })
 }
 
