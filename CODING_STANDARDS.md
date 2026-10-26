@@ -26,10 +26,10 @@ responsibility.
 | `game` | Game rules, persistent state layout and initialization, assets, build code, and utility composition. | Reusable mechanisms belong in `game-core`. OS access belongs in the platform. |
 | `game-core` | Mechanisms extracted from concrete game use, with game-independent semantics and private representations. Each utility owns its invariants. | Game selection and composition belong in `game`. Mathematical operations belong in `math`. |
 | `game-memory` | Arenas and byte-to-typed-storage operations under the unsafe-code rules. | The game chooses its layout. The platform supplies the bytes. |
-| `math` | Mathematical value types and operations independent of game and platform crates. | Shared render-value constraints belong in `platform-api`. Game rules belong in `game`. |
-| `platform-api` | The `Game` and `Platform` contracts, boundary values and errors, and validity checks on those values. | Game selection, game mechanisms, runtime bookkeeping, and backend implementations belong to their implementation owners. |
-| `platform-<os>`, currently `platform-linux` | Target execution, memory bytes, external services, request tracking, and target-specific libraries. | Game-memory interpretation belongs in `game`. GPU backend work belongs in `renderer` when the platform uses it. |
-| `renderer` | GPU resources, command execution, and backend-specific rendering checks. | Command contracts belong in `platform-api`. Game-side command construction belongs in `game-core`. |
+| `math` | Mathematical value types and operations independent of game and platform crates, including vectors and rectangles. | Game rules and platform resource policies belong to their consumers. |
+| `platform-api` | Declarations for the `Game` lifecycle, the `Platform` function table, and plain boundary data and errors. | Validation, limits, defaults, constructors, conversion helpers, bookkeeping, and game mechanisms belong to consumers. |
+| `platform-<os>`, currently `platform-linux` | Target execution, memory bytes, device mapping, file operations, request tracking, platform limits, and target-specific libraries. | Game-memory interpretation belongs in `game`. GPU backend work belongs in `renderer` when the platform uses it. |
+| `renderer` | GPU resources, command execution, and rendering checks using capacities supplied by its platform. | Command declarations belong in `platform-api`. Game-side command construction belongs in `game-core`. Resource policy belongs to the platform. |
 | `asset-packer` | Standalone, standard-library-only build tooling that writes packs and generated asset IDs. | Runtime pack reading belongs in `game-core`. Game assets and build integration belong in `game`. |
 
 Keep `game-core` utility modules independent of sibling utilities. Compose them
@@ -48,26 +48,41 @@ change. Demonstrate it through normal execution, not unused imports, no-effect
 calls, or tests alone. Name the runtime path and observed behavior that depends
 on the capability.
 
-Each platform implements `platform_api::Platform` directly and links `game`
-directly. Keep platform implementation state in that platform's crate. Share
+Each platform supplies `platform_api::Platform` function pointers and links `game`
+directly. The table borrows an opaque generic context owned by the platform.
+Keep platform implementation state in that platform's crate. Share
 concrete modules within a platform when useful, rather than requiring a shared
 host wrapper or another backend interface. Each platform chooses whether to
 provide desktop or CLI executables. Sharing a contract does not require matching
 feature sets, resource policies, scheduling, or backend-specific validation.
 Every implementation must still honor the explicit contract guarantees.
 
-Keep validity checks on boundary values in `platform-api`. Keep checks that
-depend on runtime history, device capabilities, or OS resources in the platform
-or renderer that owns them. For example, image dimensions and byte length are
-value validity; whether a texture is resident depends on renderer state.
+Keep `platform-api` declaration-only. Fields are public; types have no handwritten
+implementations, default values, or constants. Use math vectors and scalar fields
+instead of render-specific numeric wrappers. Consumers validate the values they
+use, including image lengths, finite geometry, and device capacity. Platform
+resource limits are constants in that platform, passed to its renderer when needed.
+Colors use normalized sRGB red, green, and blue followed by linear alpha in
+`Vec4`'s `x`, `y`, `z`, and `w` fields.
 Different outcomes across platforms are defects only when they violate a shared
 contract. CLI success does not establish renderer validity.
 
 Keep the shared game interface in `platform-api::Game`. Do not add parallel
 interfaces. Boundary signatures use `platform-api` types, shared `math` value
-types, and an opaque game-owned state root. Keep platform and third-party library
+types, core types, an opaque game-owned state root, and the opaque callback context.
+Keep concrete platform and third-party library
 types out of game-side interfaces, including nested types and errors. Keep
 target-specific code and libraries inside the platform module for that target.
+
+Keep frame updates and audio updates separate. Input describes actions, continuous
+movement, pointing, scrolling, and text rather than physical device codes. File
+requests describe paths and operations rather than game roles such as assets or
+saves. Texture upload and release are platform calls, not frame contents. The
+platform consumes or copies borrowed request data before returning. Read results
+remain valid for the receiving game update; the game copies retained results into
+its own storage. Uploads precede subsequent draws, and releasing textures preserves
+already-submitted work. File replacement publishes a completed replacement rather
+than truncating the existing destination first; offset writes are not atomic.
 
 #### Memory ownership
 
@@ -93,6 +108,10 @@ game-side heap allocation or per-frame allocation in hot paths.
 Use newtypes for confusable IDs, indices, units, and coordinate spaces. Use enums
 instead of related booleans or `Option` combinations. Keep fields private where
 constructors enforce validity.
+
+The platform boundary uses plain vectors and scalars with field names identifying
+their meaning. Keep IDs distinct, but do not wrap those values solely to attach
+validation or platform limits.
 
 Use named fields rather than multi-field tuple structs or tuples whose positions
 are unclear. Newtypes and small, unambiguous local tuples are exceptions. Use an
