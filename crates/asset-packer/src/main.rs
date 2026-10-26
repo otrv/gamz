@@ -4,7 +4,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-const USAGE: &str = "Usage: asset-packer <source-directory> --max-assets <count> --max-bytes <bytes> --output <directory> [--mode embedded|external]\n\nRecursively packs regular files as opaque bytes in sorted relative-path order.\nLimits and output are required. Mode defaults to embedded.\nEmbedded mode writes only assets.gen.rs with inline pack bytes and named IDs.\nExternal mode writes only assets.pack with paths for runtime name lookup.\nSee the asset-packer README for filename rules and Cargo integration.";
+const USAGE: &str = "Usage: asset-packer <source-directory> --max-assets <count> --max-bytes <bytes> --output <directory> [--mode embedded|external]\n\nRecursively packs regular files as opaque bytes in sorted relative-path order.\nLimits and output are required. Mode defaults to embedded.\nEmbedded mode writes only assets.gen.rs with named byte slices.\nExternal mode writes only assets.pack with paths for runtime name lookup.\nSee the asset-packer README for filename rules and Cargo integration.";
 
 fn usage_error() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, USAGE)

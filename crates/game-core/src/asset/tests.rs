@@ -1,4 +1,6 @@
-use crate::asset::{AssetId, InvalidImage, Pack, PackError, read_rgba};
+use crate::asset::{
+    AssetId, AssetRange, InvalidImage, PACK_HEADER_BYTES, Pack, PackCatalog, PackError, read_rgba,
+};
 
 fn fixture() -> [u8; 128] {
     let mut bytes = [0; 128];
@@ -36,11 +38,54 @@ fn resolves_ids_and_names_to_opaque_bytes_including_empty_payloads() {
 fn reports_missing_ids_and_exact_names() {
     let bytes = fixture();
     let pack = Pack::<3, 128>::from_bytes(&bytes).unwrap();
+    let catalog = PackCatalog::<3, 128>::from_bytes(&bytes[..120]).unwrap();
     for id in [0, 8, 999, 1001, u32::MAX] {
         assert_eq!(pack.bytes(AssetId::new(id)), Err(PackError::MissingAsset));
     }
     for name in ["", "A.bin", "a", "a.bin/", "b.bin", "é", "ê.bin"] {
         assert_eq!(pack.bytes_by_name(name), Err(PackError::MissingAsset));
+        assert_eq!(catalog.find(name), Err(PackError::MissingAsset));
+    }
+}
+
+#[test]
+fn resolves_ranges_from_catalog_without_payload_storage() {
+    let bytes = fixture();
+    assert_eq!(PACK_HEADER_BYTES, 16);
+    assert_eq!(PackCatalog::<3, 128>::required_bytes(&bytes[..16]), Ok(120));
+    let range = {
+        let prefix: [u8; 120] = bytes[..120].try_into().unwrap();
+        let catalog = PackCatalog::<3, 128>::from_bytes(&prefix).unwrap();
+        assert_eq!(
+            catalog.find("a.bin"),
+            Ok(AssetRange {
+                offset: 120,
+                len: 3
+            })
+        );
+        assert_eq!(
+            catalog.find("empty.bin"),
+            Ok(AssetRange {
+                offset: 123,
+                len: 0
+            })
+        );
+        catalog.find("é.bin").unwrap()
+    };
+    assert_eq!(
+        range,
+        AssetRange {
+            offset: 123,
+            len: 5
+        }
+    );
+    for length in 0..=128 {
+        if length != 120 {
+            assert!(PackCatalog::<3, 128>::from_bytes(&bytes[..length]).is_err());
+        }
+        if length != 16 {
+            assert!(PackCatalog::<3, 128>::required_bytes(&bytes[..length]).is_err());
+        }
     }
 }
 
@@ -56,9 +101,25 @@ fn enforces_game_budgets_including_exact_boundaries() {
         Pack::<3, 127>::from_bytes(&bytes).err(),
         Some(PackError::BudgetExceeded)
     );
+    assert_eq!(
+        PackCatalog::<2, 128>::required_bytes(&bytes[..16]),
+        Err(PackError::BudgetExceeded)
+    );
+    assert_eq!(PackCatalog::<3, 120>::required_bytes(&bytes[..16]), Ok(120));
+    assert_eq!(
+        PackCatalog::<3, 119>::required_bytes(&bytes[..16]),
+        Err(PackError::BudgetExceeded)
+    );
+    assert_eq!(
+        PackCatalog::<3, 127>::from_bytes(&bytes[..120]).err(),
+        Some(PackError::BudgetExceeded)
+    );
     let empty = b"GPAK\x03\0\0\0\0\0\0\0\0\0\0\0";
     let pack = Pack::<0, 16>::from_bytes(empty).unwrap();
     assert_eq!(pack.bytes_by_name("a.bin"), Err(PackError::MissingAsset));
+    assert_eq!(PackCatalog::<0, 16>::required_bytes(empty), Ok(16));
+    let catalog = PackCatalog::<0, 16>::from_bytes(empty).unwrap();
+    assert_eq!(catalog.find("a.bin"), Err(PackError::MissingAsset));
 }
 
 #[test]
@@ -98,6 +159,7 @@ fn rejects_ambiguous_or_invalid_catalogs() {
             Pack::<3, 128>::from_bytes(&bytes).err(),
             Some(PackError::InvalidPack)
         );
+        assert!(PackCatalog::<3, 128>::from_bytes(&bytes[..120]).is_err());
     }
     for (offset, value) in [
         (28, 119),
@@ -114,6 +176,18 @@ fn rejects_ambiguous_or_invalid_catalogs() {
             Pack::<3, 128>::from_bytes(&bytes).err(),
             Some(PackError::InvalidPack)
         );
+        if offset == 92 {
+            let catalog = PackCatalog::<3, 128>::from_bytes(&bytes[..120]).unwrap();
+            assert_eq!(
+                catalog.find("é.bin"),
+                Ok(AssetRange {
+                    offset: 123,
+                    len: 4
+                })
+            );
+        } else {
+            assert!(PackCatalog::<3, 128>::from_bytes(&bytes[..120]).is_err());
+        }
     }
 }
 
@@ -126,6 +200,7 @@ fn rejects_invalid_utf8_unsorted_and_duplicate_names() {
             Pack::<3, 128>::from_bytes(&bytes).err(),
             Some(PackError::InvalidPack)
         );
+        assert!(PackCatalog::<3, 128>::from_bytes(&bytes[..120]).is_err());
     }
     let mut bytes = fixture();
     bytes[52..56].copy_from_slice(&5_u32.to_le_bytes());
@@ -136,6 +211,7 @@ fn rejects_invalid_utf8_unsorted_and_duplicate_names() {
         Pack::<3, 128>::from_bytes(&bytes).err(),
         Some(PackError::InvalidPack)
     );
+    assert!(PackCatalog::<3, 128>::from_bytes(&bytes[..120]).is_err());
 }
 
 #[test]
