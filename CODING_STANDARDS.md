@@ -28,8 +28,8 @@ responsibility.
 | `game-memory` | Arenas and byte-to-typed-storage operations under the unsafe-code rules. | The game chooses its layout. The platform supplies the bytes. |
 | `math` | Mathematical value types and operations independent of game and platform crates, including vectors and rectangles. | Game rules and platform resource policies belong to their consumers. |
 | `platform-api` | Declarations for the `Game` lifecycle, the `Platform` function table, and plain boundary data and errors. | Validation, limits, defaults, constructors, conversion helpers, bookkeeping, and game mechanisms belong to consumers. |
-| `platform-<os>`, currently `platform-linux` | Target execution, memory bytes, device mapping, file operations, request tracking, platform limits, and target-specific libraries. | Game-memory interpretation belongs in `game`. GPU backend work belongs in `renderer` when the platform uses it. |
-| `renderer` | GPU resources, command execution, and rendering checks using capacities supplied by its platform. | Command declarations belong in `platform-api`. Game-side command construction belongs in `game-core`. Resource policy belongs to the platform. |
+| `platform-<os>`, currently `platform-linux` | Target execution, memory bytes, device mapping, file operations, request tracking, platform limits, and target-specific libraries. | Game-memory interpretation belongs in `game`. GPU backend work belongs in `renderer-wgpu` when the platform uses it. |
+| `renderer-wgpu` | GPU resources, command execution, and rendering checks using capacities supplied by its platform. | Command declarations belong in `platform-api`. Game-side command construction belongs in `game-core`. Resource policy belongs to the platform. |
 | `asset-packer` | Standalone, standard-library-only build tooling that writes packs and generated asset IDs. | Runtime pack reading belongs in `game-core`. Game assets and build integration belong in `game`. |
 
 Keep `game-core` utility modules independent of sibling utilities. Compose them

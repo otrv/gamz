@@ -10,6 +10,6 @@ Exercise only affected properties: window creation and presentation, resize or m
 
 For audio changes, use a real device or clocked virtual sink and compare captured samples from an exercised, independently known signal. An ALSA null device proves neither playback timing nor underrun recovery. For recovery, stop the process for one second, resume it, and require sound afterward. Test unavailable-device failure when affected. Do not change the game to emit a test signal without approval.
 
-Sources: `crates/platform-linux/src/linux/{main,audio,input}.rs`, `crates/platform-linux/src/{files,window,limits}.rs`, and `crates/renderer/src/wgpu/`.
+Sources: `crates/platform-linux/src/linux/{main,audio,input}.rs`, `crates/platform-linux/src/{files,window,limits}.rs`, and `crates/renderer-wgpu/src/wgpu/`.
 
 Keep complete platform diagnostics and relevant captures. Exercise texture, clipping, sampling, or audio paths only with suitable existing content or an explicitly authorized probe. Mark missing prerequisites and unexercised paths rather than launching unrelated hosts or claiming coverage from process survival.

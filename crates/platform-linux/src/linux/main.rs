@@ -24,7 +24,7 @@ use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::Frame;
 use platform_api::window::{WindowMode, WindowState};
 use platform_api::{FrameError, Game, Platform, StartupError};
-use renderer::wgpu::{Limits, Renderer, RendererError};
+use renderer_wgpu::wgpu::{Limits, Renderer, RendererError};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::error::{EventLoopError, OsError};

@@ -9,6 +9,6 @@ wildcards = "allow"
 deny = [
     { crate = "game-core", wrappers = ["game"] },
     { crate = "game-memory", wrappers = ["game"] },
-    { crate = "renderer", wrappers = ["platform-linux"] },
+    { crate = "renderer-wgpu", wrappers = ["platform-linux"] },
     { crate = "game", wrappers = ["platform-linux"] },
 ]
