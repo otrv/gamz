@@ -8,7 +8,8 @@ the reported 14x speedup is not an acceptance requirement.
 ## How we will work
 
 Milestones describe required outcomes, not implementation plans. Milestone 1 is
-the agreed first scope and is in progress. Later milestones are unimplemented.
+implemented and verified on Linux with software rendering. Later milestones are
+unimplemented.
 
 Plan only the next milestone, using what we learned from the previous one.
 At that point, choose focused resources, discuss design decisions and tradeoffs,
@@ -47,8 +48,14 @@ Keep scene geometry and camera placement in `game`, camera transforms in `math`,
 and depth storage in `renderer-wgpu`. Use the existing render commands. Cube
 faces use preset colors rather than lighting, and the HUD renders without depth.
 
-The next step adds the box-shaped player, WASD movement, and the following camera.
-Movement speed and the camera offset remain to be chosen before that step.
+The player step is verified through the CLI and a native Linux visual check.
+Movement, camera following, draw-order reversal, and resizing passed.
+
+Movement uses world X and Z at 4 units per second. Limit diagonal input to unit
+length while preserving weaker analog input. Cap each movement update at 100 ms
+and discard excess elapsed time to avoid jumps after a pause. Keep the camera
+7 units above and 10 units behind the player's feet, looking at its center.
+The player can pass through cubes and leave the finite floor without falling.
 
 ## 2. A repeatable rendering baseline
 

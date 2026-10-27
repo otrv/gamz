@@ -103,9 +103,10 @@ const fn atlas_bytes() -> [u8; 8 + ATLAS_WIDTH * 5 * 4] {
     bytes[4] = width[0];
     bytes[5] = width[1];
     bytes[6] = 5;
-    let letters = b"AEGILMNOPRSTUVWY?";
+    let letters = b"ADEGILMNOPRSTUVWY?";
     let rows = [
         [2, 5, 7, 5, 5],
+        [6, 5, 5, 5, 6],
         [7, 4, 6, 4, 7],
         [7, 4, 5, 5, 7],
         [7, 2, 2, 2, 7],

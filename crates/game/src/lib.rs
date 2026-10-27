@@ -4,10 +4,11 @@ mod hud;
 mod scene;
 
 use core::mem::{align_of, size_of};
+use core::time::Duration;
 
 use game_core::font::Font;
 use game_core::render::RenderError;
-use math::{Vec2, Vec4};
+use math::{Vec2, Vec3, Vec4};
 use memory::Arena;
 use platform_api::audio::StereoSample;
 use platform_api::input::{ButtonPosition, Input, PlatformEvent};
@@ -16,13 +17,16 @@ use platform_api::render::{Frame, RenderCommands, TextureId, TextureUpload, Text
 use platform_api::{FrameError, Game, Platform, StartupError};
 use scene::DrawOrder;
 
-const NORMAL_LABEL: &str = "NORMAL   PRESS START TO REVERSE";
-const REVERSE_LABEL: &str = "REVERSE   PRESS START TO RESTORE";
+const NORMAL_LABEL: &str = "WASD MOVE   NORMAL   START REVERSES";
+const REVERSE_LABEL: &str = "WASD MOVE   REVERSE   START RESTORES";
+const PLAYER_SPEED: f32 = 4.0;
+const MAX_MOVEMENT_ELAPSED: Duration = Duration::from_millis(100);
 
 pub struct GameState {
     font: Font,
     transient_capacity: usize,
     draw_order: DrawOrder,
+    player_position: Vec3,
 }
 
 impl Game for GameState {
@@ -52,6 +56,7 @@ impl Game for GameState {
             font: hud::font().map_err(|_| StartupError::Game { code: 1 })?,
             transient_capacity,
             draw_order: DrawOrder::Forward,
+            player_position: Vec3::new(0.0, 0.0, -2.0),
         };
         let image = hud::image();
         (platform.upload_texture)(
@@ -83,6 +88,11 @@ impl Game for GameState {
         if input.events.contains(&PlatformEvent::CloseRequested) {
             (platform.exit)(platform.context);
         }
+        let elapsed = input.elapsed.min(MAX_MOVEMENT_ELAPSED).as_secs_f32();
+        let movement = input.actions.movement;
+        let displacement = movement * (PLAYER_SPEED * elapsed / movement.length().max(1.0));
+        self.player_position.x += displacement.x;
+        self.player_position.z -= displacement.y;
         let button = input.actions.start;
         let presses = button.half_transitions / 2
             + u32::from(
@@ -115,7 +125,7 @@ fn draw<'frame>(
         DrawOrder::Forward => NORMAL_LABEL,
         DrawOrder::Reverse => REVERSE_LABEL,
     };
-    scene::draw(&state.draw_order, &mut commands)?;
+    scene::draw(&state.draw_order, state.player_position, &mut commands)?;
     hud::draw(
         &state.font,
         label,
