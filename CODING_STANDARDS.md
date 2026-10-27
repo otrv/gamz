@@ -25,7 +25,7 @@ responsibility.
 | --- | --- | --- |
 | `game` | Game rules, persistent state layout and initialization, assets, build code, and utility composition. | Reusable mechanisms belong in `game-core`. OS access belongs in the platform. |
 | `game-core` | Mechanisms extracted from concrete game use, with game-independent semantics and private representations. Each utility owns its invariants. | Game selection and composition belong in `game`. Mathematical operations belong in `math`. |
-| `game-memory` | Arenas and byte-to-typed-storage operations under the unsafe-code rules. | The game chooses its layout. The platform supplies the bytes. |
+| `memory` | Arenas and byte-to-typed-storage operations under the unsafe-code rules, used by the game and platform. | The game chooses its state and scratch layouts. The platform supplies the bytes and owns render-command storage. |
 | `math` | Mathematical value types and operations independent of game and platform crates, including vectors and rectangles. | Game rules and platform resource policies belong to their consumers. |
 | `platform-api` | Declarations for the `Game` lifecycle, the `Platform` function table, and plain boundary data and errors. | Validation, limits, defaults, constructors, conversion helpers, bookkeeping, and game mechanisms belong to consumers. |
 | `platform-<os>`, currently `platform-linux` | Target execution, memory bytes, device mapping, file operations, request tracking, platform limits, and target-specific libraries. | Game-memory interpretation belongs in `game`. GPU backend work belongs in `renderer-wgpu` when the platform uses it. |
@@ -87,7 +87,12 @@ than truncating the existing destination first; offset writes are not atomic.
 #### Memory ownership
 
 The platform supplies bounded persistent and transient byte regions. Game-side
-code constructs arenas over them. The game determines its required capacities
+code constructs arenas over them. The platform separately supplies typed command
+storage with a capacity matching its command limit and an initial length of zero.
+The platform may use `memory` to construct that storage, but does not interpret
+game state or game scratch layouts. The game returns a `Frame` borrowing the used
+command slice. The platform consumes it before reusing command or transient bytes.
+The game determines its required persistent and transient capacities
 and rejects insufficient capacity during initialization. The platform supplies
 the available capacities and handles startup errors without interpreting game
 layout. Each frame must supply at least the transient capacity accepted at
@@ -96,7 +101,7 @@ Frame scratch resets together. Persistent game memory holds values, indices,
 handles, and offsets, never references or pointers. Its contents must remain
 valid when game code reloads.
 
-Game-side crates are `platform-api`, `game-core`, `game-memory`, `math`, and `game`.
+Game-side crates are `platform-api`, `game-core`, `memory`, `math`, and `game`.
 They use `#![no_std]`, never link `alloc` or `std` through `extern crate`, and have
 runtime dependencies that use neither. Check transitive dependencies and enabled
 features when versions or features change.
@@ -172,7 +177,7 @@ constructors before `main`.
 
 ### Unsafe code
 
-Raw pointers and ABI details belong only in `game-memory`, alongside unsafe code.
+Raw pointers and ABI details belong only in `memory`, alongside unsafe code.
 Adding an unsafe crate needs approval as a central policy change and Miri coverage
 in `.githooks/pre-commit`. Otherwise use safe library APIs.
 
@@ -206,7 +211,7 @@ maintenance. Third-party macro-generated allowances are not handwritten suppress
 ### Tests
 
 Unit tests are allowed only for small, reusable utilities in `game-core`,
-`game-memory`, and `math`. Test behavior callers rely on through public interfaces, not
+`memory`, and `math`. Test behavior callers rely on through public interfaces, not
 private helpers or incidental implementation details. Prefer extending existing
 tests over adding new ones. Keep a regression test only when it would catch a
 plausible future mistake that types and existing tests would miss.

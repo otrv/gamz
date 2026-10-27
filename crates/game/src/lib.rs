@@ -6,19 +6,18 @@ use core::mem::{align_of, size_of};
 
 use game_core::entity::{EntityId, EntityStorage};
 use game_core::font::Font;
-use game_core::render::RenderCommands;
-use game_memory::Arena;
+use game_core::render::{self, RenderError};
 use math::{Radians, Rect, Vec2, Vec2x4, Vec4};
+use memory::Arena;
 use platform_api::audio::StereoSample;
 use platform_api::input::{ButtonPosition, ButtonState, Input, PlatformEvent};
 use platform_api::memory::{PersistentMemory, TransientMemory};
 use platform_api::render::{
-    Frame, RectStyle, RenderCommand, TextureId, TextureUpload, TexturedQuad,
+    Frame, RectStyle, RenderCommand, RenderCommands, TextureId, TextureUpload, TexturedQuad,
 };
 use platform_api::{FrameError, Game, Platform, StartupError};
 
 const BRICK_COUNT: usize = 32;
-const MAX_RENDER_COMMANDS: usize = BRICK_COUNT + 12;
 const READY_LABEL: &str = "PRESS START";
 const PLAYING_LABEL: &str = "PLAYING";
 const WON_LABEL: &str = "YOU WON";
@@ -106,10 +105,8 @@ impl Game for GameState {
             .map(str::len)
             .max()
             .expect("the HUD has labels");
-        let required_transient = size_of::<RenderCommand<'_>>() * MAX_RENDER_COMMANDS
-            + (align_of::<RenderCommand<'_>>() - 1)
-            + size_of::<TexturedQuad>() * max_glyphs
-            + (align_of::<TexturedQuad>() - 1);
+        let required_transient =
+            size_of::<TexturedQuad>() * max_glyphs + (align_of::<TexturedQuad>() - 1);
         if transient_capacity < required_transient {
             return Err(StartupError::InsufficientTransientMemory {
                 required: required_transient,
@@ -143,6 +140,7 @@ impl Game for GameState {
         &mut self,
         input: &Input<'_>,
         memory: TransientMemory<'a>,
+        commands: RenderCommands<'a>,
         platform: &mut Platform<'_, Context>,
     ) -> Result<Frame<'a>, FrameError> {
         if memory.bytes.len() < self.transient_capacity {
@@ -182,7 +180,9 @@ impl Game for GameState {
                 advance(self, dt);
             }
         }
-        Ok(draw(self, memory))
+        draw(self, memory, commands).map_err(|RenderError::CommandCapacityExceeded| {
+            FrameError::RenderCommandCapacityExceeded
+        })
     }
 
     fn update_audio(&mut self, _sample_rate_hz: u32, samples: &mut [StereoSample]) {
@@ -373,12 +373,14 @@ fn sweep(ball: Vec2, delta: Vec2, center: Vec2, half: Vec2) -> Option<(f32, Vec2
     (normal.dot(delta) < 0.0).then_some((entry, normal))
 }
 
-fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
+fn draw<'a>(
+    state: &GameState,
+    memory: TransientMemory<'a>,
+    mut commands: RenderCommands<'a>,
+) -> Result<Frame<'a>, RenderError> {
     let TransientMemory { bytes } = memory;
     let mut arena = Arena::new(bytes);
-    let storage = arena.push_slice(MAX_RENDER_COMMANDS, RenderCommand::SetClip(None));
-    let mut commands = RenderCommands::new(storage);
-    draw_court(state, &mut commands);
+    draw_court(state, &mut commands)?;
     let (ball, status) = match state.phase {
         Phase::Ready => (
             Some(state.ready_ball()),
@@ -403,25 +405,25 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
         Phase::Won => WON_LABEL,
         Phase::Lost => LOST_LABEL,
     };
-    hud::draw(&state.font, label, status, &mut arena, &mut commands)
-        .expect("frame command budget includes the HUD");
+    hud::draw(&state.font, label, status, &mut arena, &mut commands)?;
     if let Some(ball) = ball {
         rect(
             &mut commands,
             ball - Vec2::new(BALL_HALF, BALL_HALF),
             Vec2::new(BALL_HALF * 2.0, BALL_HALF * 2.0),
             Vec4::new(1.0, 1.0, 1.0, 1.0),
-        );
+        )?;
         if matches!(state.phase, Phase::Ready) {
             let aim = Vec2::new(0.0, -48.0).rotate(Radians::new(0.35));
-            commands
-                .push(RenderCommand::DrawLine {
+            render::push(
+                &mut commands,
+                RenderCommand::DrawLine {
                     start: ball,
                     end: ball + aim,
                     width: 2.0,
                     color: status,
-                })
-                .expect("frame command budget includes the aim line");
+                },
+            )?;
         }
     } else {
         rect(
@@ -429,23 +431,23 @@ fn draw<'a>(state: &GameState, memory: TransientMemory<'a>) -> Frame<'a> {
             Vec2::new(480.0, 352.0),
             Vec2::new(320.0, 16.0),
             status,
-        );
+        )?;
     }
-    Frame {
+    Ok(Frame {
         canvas_size: Vec2::new(1280.0, 720.0),
         clear_color: Vec4::new(16.0 / 255.0, 23.0 / 255.0, 34.0 / 255.0, 1.0),
-        commands: commands.finish(),
-    }
+        commands: &commands.storage[..commands.len],
+    })
 }
 
-fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) {
+fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) -> Result<(), RenderError> {
     let wall = Vec4::new(73.0 / 255.0, 87.0 / 255.0, 108.0 / 255.0, 1.0);
     for (x, y, width, height) in [
         (16.0, 64.0, 1248.0, 8.0),
         (16.0, TOP, 8.0, 632.0),
         (RIGHT, TOP, 8.0, 632.0),
     ] {
-        rect(commands, Vec2::new(x, y), Vec2::new(width, height), wall);
+        rect(commands, Vec2::new(x, y), Vec2::new(width, height), wall)?;
     }
     for (_, brick) in state.bricks.iter() {
         rect(
@@ -453,29 +455,36 @@ fn draw_court(state: &GameState, commands: &mut RenderCommands<'_>) {
             brick.center - BRICK_HALF,
             BRICK_HALF * 2.0,
             brick.color,
-        );
+        )?;
     }
     rect(
         commands,
         Vec2::new(state.paddle.x - PADDLE_HALF, PADDLE_Y),
         Vec2::new(PADDLE_HALF * 2.0, 14.0),
         Vec4::new(227.0 / 255.0, 238.0 / 255.0, 245.0 / 255.0, 1.0),
-    );
+    )?;
     for life in 0..state.lives {
         rect(
             commands,
             Vec2::new(28.0 + f32::from(life) * 24.0, 28.0),
             Vec2::new(14.0, 14.0),
             Vec4::new(112.0 / 255.0, 230.0 / 255.0, 204.0 / 255.0, 1.0),
-        );
+        )?;
     }
+    Ok(())
 }
 
-fn rect(commands: &mut RenderCommands<'_>, origin: Vec2, size: Vec2, color: Vec4) {
-    commands
-        .push(RenderCommand::DrawRect {
+fn rect(
+    commands: &mut RenderCommands<'_>,
+    origin: Vec2,
+    size: Vec2,
+    color: Vec4,
+) -> Result<(), RenderError> {
+    render::push(
+        commands,
+        RenderCommand::DrawRect {
             rect: Rect { origin, size },
             style: RectStyle::Filled(color),
-        })
-        .expect("frame command budget includes court rectangles");
+        },
+    )
 }

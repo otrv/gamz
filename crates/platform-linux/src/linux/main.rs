@@ -40,7 +40,7 @@ use input::InputState;
 use limits::{
     MAX_COMMANDS, MAX_EVENTS, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURE_SIDE, MAX_TEXTURES,
 };
-use memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
+use memory::{COMMAND_MEMORY_BYTES, PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
 use window::ModeRequests;
 
 const WINDOW_TITLE: &str = "gamz";
@@ -223,14 +223,11 @@ fn main() -> std::process::ExitCode {
 }
 
 fn run() -> Result<(), PlatformError> {
-    let mut persistent = Vec::<u8>::new();
-    persistent
-        .try_reserve_exact(PERSISTENT_MEMORY_BYTES)
-        .map_err(PlatformError::Memory)?;
-    let mut transient = Vec::<u8>::new();
-    transient
-        .try_reserve_exact(TRANSIENT_MEMORY_BYTES)
-        .map_err(PlatformError::Memory)?;
+    let mut persistent =
+        memory::allocate(PERSISTENT_MEMORY_BYTES).map_err(PlatformError::Memory)?;
+    let mut transient = memory::allocate(TRANSIENT_MEMORY_BYTES).map_err(PlatformError::Memory)?;
+    let mut command_bytes =
+        memory::allocate(COMMAND_MEMORY_BYTES).map_err(PlatformError::Memory)?;
     let mut event_loop = EventLoop::new().map_err(PlatformError::EventLoop)?;
     let Some(mut application) = open_window(&mut event_loop)? else {
         return Ok(());
@@ -285,55 +282,71 @@ fn run() -> Result<(), PlatformError> {
                 WindowMode::Fullscreen => Some(Fullscreen::Borderless(None)),
             });
         });
-        let frame = update_game(
+        let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
+        let input = collect_input(
             &mut application,
             &mut context,
-            state,
-            TransientMemory {
-                bytes: &mut transient.spare_capacity_mut()[..TRANSIENT_MEMORY_BYTES],
-            },
             &mut completions,
+            &mut events,
             window_state,
             now.duration_since(previous_frame),
-        )
-        .map_err(PlatformError::Frame)?;
+        );
+        let frame = state
+            .update(
+                &input,
+                TransientMemory {
+                    bytes: &mut transient.spare_capacity_mut()[..TRANSIENT_MEMORY_BYTES],
+                },
+                memory::commands(&mut command_bytes.spare_capacity_mut()[..COMMAND_MEMORY_BYTES]),
+                &mut context.api(),
+            )
+            .map_err(PlatformError::Frame)?;
+        application.input.finish_frame();
+        context.files.recycle(&mut completions);
         if context.exit {
             break;
         }
         audio
             .update(state)
             .map_err(|error| PlatformError::Audio(error.into()))?;
-        window.pre_present_notify();
-        if let Some(stats) = context
-            .renderer
-            .draw(&frame)
-            .map_err(PlatformError::Renderer)?
-            && now >= next_stats
-        {
-            println!(
-                "commands={} quads={} batches={} vertex_bytes={}",
-                stats.commands, stats.quads, stats.batches, stats.vertex_bytes
-            );
-            next_stats = now + Duration::from_secs(1);
-        }
+        present_frame(&mut context.renderer, &window, &frame, now, &mut next_stats)
+            .map_err(PlatformError::Renderer)?;
         previous_frame = now;
         next_frame = now + FRAME_INTERVAL;
     }
     Ok(())
 }
 
-fn update_game<'frame>(
-    application: &mut Application,
+fn present_frame(
+    renderer: &mut Renderer,
+    window: &Window,
+    frame: &Frame<'_>,
+    now: Instant,
+    next_stats: &mut Instant,
+) -> Result<(), RendererError> {
+    window.pre_present_notify();
+    if let Some(stats) = renderer.draw(frame)?
+        && now >= *next_stats
+    {
+        println!(
+            "commands={} quads={} batches={} vertex_bytes={}",
+            stats.commands, stats.quads, stats.batches, stats.vertex_bytes
+        );
+        *next_stats = now + Duration::from_secs(1);
+    }
+    Ok(())
+}
+
+fn collect_input<'input>(
+    application: &'input mut Application,
     context: &mut Context,
-    state: &mut game::GameState,
-    memory: TransientMemory<'frame>,
-    completions: &mut Completions,
+    completions: &'input mut Completions,
+    events: &'input mut [PlatformEvent<'input>],
     window: WindowState,
     elapsed: Duration,
-) -> Result<Frame<'frame>, FrameError> {
+) -> Input<'input> {
     context.files.collect(completions);
-    let mut events = [PlatformEvent::Resumed; MAX_EVENTS];
-    let mut count = completions.events(&mut events);
+    let mut count = completions.events(events);
     count += context.modes.events(&mut events[count..]);
     if let Some(event) = application.lifecycle.take() {
         events[count] = event;
@@ -343,7 +356,7 @@ fn update_game<'frame>(
         events[count] = PlatformEvent::CloseRequested;
         count += 1;
     }
-    let input = Input {
+    Input {
         elapsed,
         actions: application.input.actions,
         pointer: application.input.pointer,
@@ -351,11 +364,7 @@ fn update_game<'frame>(
         text: &application.input.text,
         window,
         events: &events[..count],
-    };
-    let frame = state.update(&input, memory, &mut context.api())?;
-    application.input.finish_frame();
-    context.files.recycle(completions);
-    Ok(frame)
+    }
 }
 
 fn open_window(event_loop: &mut EventLoop<()>) -> Result<Option<Application>, PlatformError> {

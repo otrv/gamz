@@ -2,7 +2,7 @@ use crate::Platform;
 use crate::audio::StereoSample;
 use crate::input::Input;
 use crate::memory::{PersistentMemory, TransientMemory};
-use crate::render::{Frame, TextureError};
+use crate::render::{Frame, RenderCommands, TextureError};
 
 pub trait Game: Sized {
     fn initialize<'persistent, Context>(
@@ -15,6 +15,7 @@ pub trait Game: Sized {
         &mut self,
         input: &Input<'_>,
         memory: TransientMemory<'frame>,
+        commands: RenderCommands<'frame>,
         platform: &mut Platform<'_, Context>,
     ) -> Result<Frame<'frame>, FrameError>;
 
@@ -32,5 +33,6 @@ pub enum StartupError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FrameError {
     InsufficientTransientMemory { required: usize, available: usize },
+    RenderCommandCapacityExceeded,
     Texture(TextureError),
 }

@@ -22,6 +22,7 @@ required-features = ["cli"]
 [dependencies]
 game = { path = "../game" }
 math = { path = "../math" }
+memory = { path = "../memory" }
 platform-api = { path = "../platform-api" }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"], optional = true }
 serde_json = { version = "1.0", default-features = false, features = ["std"], optional = true }

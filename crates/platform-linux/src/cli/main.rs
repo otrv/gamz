@@ -31,7 +31,7 @@ use serde::Serialize;
 use files::{Completions, Files};
 use input::Input;
 use limits::{MAX_AUDIO_FRAMES, MAX_EVENTS};
-use memory::{PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
+use memory::{COMMAND_MEMORY_BYTES, PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
 use output::{AudioOutput, FrameOutput, Startup, Uploads};
 use textures::Textures;
 use window::ModeRequests;
@@ -97,10 +97,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if args.next().is_some() {
         return Err("too many arguments".into());
     }
-    let mut persistent = Vec::<u8>::new();
-    persistent.try_reserve_exact(persistent_bytes)?;
-    let mut transient = Vec::<u8>::new();
-    transient.try_reserve_exact(transient_bytes)?;
+    let mut persistent = memory::allocate(persistent_bytes)?;
+    let mut transient = memory::allocate(transient_bytes)?;
     let mut output = BufWriter::new(io::stdout().lock());
     let mut context = Context {
         files: Files::new(),
@@ -137,6 +135,7 @@ fn drive(
     transient: &mut [MaybeUninit<u8>],
     output: &mut impl Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut command_bytes = memory::allocate(COMMAND_MEMORY_BYTES)?;
     let mut audio = vec![StereoSample { left: 0, right: 0 }; MAX_AUDIO_FRAMES];
     let mut completions = Completions::new();
     let mut window = WindowState {
@@ -192,6 +191,9 @@ fn drive(
                     .update(
                         &input,
                         TransientMemory { bytes: transient },
+                        memory::commands(
+                            &mut command_bytes.spare_capacity_mut()[..COMMAND_MEMORY_BYTES],
+                        ),
                         &mut context.api(),
                     )
                     .map_err(|error| format!("game frame: {error:?}"))?;

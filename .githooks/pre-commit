@@ -35,7 +35,7 @@ if ! "$all"; then
                 format=true; cli=true; linux=true ;;
             crates/game-core/*)
                 format=true; cli=true; linux=true; core=true ;;
-            crates/game-memory/*)
+            crates/memory/*)
                 format=true; cli=true; linux=true; memory=true; miri=true ;;
             crates/math/*)
                 format=true; cli=true; linux=true; core=true; math=true ;;
@@ -93,7 +93,7 @@ if ! "$all" && "$core"; then
     cargo clippy -p game-core --all-targets --all-features --locked --target "$native_target"
 fi
 if ! "$all" && "$memory"; then
-    cargo clippy -p game-memory --all-targets --all-features --locked --target "$native_target"
+    cargo clippy -p memory --all-targets --all-features --locked --target "$native_target"
 fi
 if ! "$all" && "$math"; then
     cargo clippy -p math --all-targets --all-features --locked --target "$native_target"
@@ -102,13 +102,13 @@ if "$all" || "$core"; then
     cargo test -p game-core --locked
 fi
 if "$all" || "$memory"; then
-    cargo test -p game-memory --locked
+    cargo test -p memory --locked
 fi
 if "$all" || "$math"; then
     cargo test -p math --locked
 fi
 if "$all" || "$miri"; then
-    rustup run nightly-2026-10-01 cargo miri test -p game-memory --all-features --locked
+    rustup run nightly-2026-10-01 cargo miri test -p memory --all-features --locked
 fi
 set +x
 echo '==> all selected checks passed'

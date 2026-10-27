@@ -1,10 +1,10 @@
 use game_core::asset;
 use game_core::font::{Font, FontError};
-use game_core::render::{RenderCommands, RenderError};
-use game_memory::Arena;
+use game_core::render::{self, RenderError};
 use math::{Radians, Rect, Vec2, Vec4};
+use memory::Arena;
 use platform_api::render::{
-    Image, PixelRect, RectStyle, RenderCommand, Sampling, TextureId, TexturedQuad,
+    Image, PixelRect, RectStyle, RenderCommand, RenderCommands, Sampling, TextureId, TexturedQuad,
 };
 
 const GLYPHS: usize = 95;
@@ -49,19 +49,25 @@ pub(super) fn draw<'a>(
     let prepared = font
         .prepare(label, origin, scale, glyphs)
         .expect("measured HUD glyph storage and canvas placement fit");
-    commands.push(RenderCommand::DrawQuads {
-        quads: prepared.glyphs,
-        texture: TextureId(0),
-        tint: color,
-        sampling: Sampling::Nearest,
-    })?;
-    commands.push(RenderCommand::DrawRect {
-        rect: Rect {
-            origin: Vec2::new(origin.x, origin.y + prepared.metrics.advance_size.y),
-            size: Vec2::new(prepared.metrics.advance_size.x, 2.0),
+    render::push(
+        commands,
+        RenderCommand::DrawQuads {
+            quads: prepared.glyphs,
+            texture: TextureId(0),
+            tint: color,
+            sampling: Sampling::Nearest,
         },
-        style: RectStyle::Filled(color),
-    })
+    )?;
+    render::push(
+        commands,
+        RenderCommand::DrawRect {
+            rect: Rect {
+                origin: Vec2::new(origin.x, origin.y + prepared.metrics.advance_size.y),
+                size: Vec2::new(prepared.metrics.advance_size.x, 2.0),
+            },
+            style: RectStyle::Filled(color),
+        },
+    )
 }
 
 const fn font_bytes() -> [u8; 10 + GLYPHS * 14] {

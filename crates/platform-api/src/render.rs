@@ -1,5 +1,10 @@
 use math::{Radians, Rect, Vec2, Vec4};
 
+pub struct RenderCommands<'frame> {
+    pub storage: &'frame mut [RenderCommand<'frame>],
+    pub len: usize,
+}
+
 pub struct Frame<'a> {
     pub canvas_size: Vec2,
     pub clear_color: Vec4,
