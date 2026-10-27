@@ -1,24 +1,19 @@
 mod failure;
 mod geometry;
-mod meshes;
 mod validation;
 
 use failure::Failure;
 use geometry::{Geometry, VERTEX_BYTES, Viewport};
-use meshes::Meshes;
 use platform_api::render::{Frame, Sampling, TextureError, TextureId, TextureUpload};
 use std::fmt;
 use wgpu::util::DeviceExt;
 
 const FRAMES_IN_FLIGHT: usize = 2;
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     pub commands: usize,
     pub quads: usize,
-    pub mesh_vertices: usize,
-    pub mesh_indices: usize,
     pub textures: usize,
     pub texture_side: u32,
     pub texture_bytes: usize,
@@ -59,7 +54,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    depth: Option<wgpu::TextureView>,
+    drawable: bool,
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     samplers: [wgpu::Sampler; 2],
@@ -70,7 +65,6 @@ pub struct Renderer {
     white: Texture,
     texture_bytes: usize,
     geometry: Geometry,
-    meshes: Meshes,
     failure: Failure,
     pending: [Option<wgpu::SubmissionIndex>; FRAMES_IN_FLIGHT],
     upload_pending: Option<wgpu::SubmissionIndex>,
@@ -118,7 +112,6 @@ impl Renderer {
         }
         let config = surface_config(&surface, &adapter, width, height)?;
         let pipeline = make_pipeline(&device, config.format.add_srgb_suffix());
-        let meshes = Meshes::new(&device, config.format.add_srgb_suffix(), limits)?;
         failure.check()?;
         let layout = pipeline.get_bind_group_layout(0);
         let samplers = [wgpu::FilterMode::Nearest, wgpu::FilterMode::Linear].map(|filter| {
@@ -160,7 +153,7 @@ impl Renderer {
             device,
             queue,
             config,
-            depth: None,
+            drawable: false,
             pipeline,
             layout,
             samplers,
@@ -171,7 +164,6 @@ impl Renderer {
             white,
             texture_bytes: 0,
             geometry: Geometry::new(gpu_quads)?,
-            meshes,
             failure,
             pending: std::array::from_fn(|_| None),
             upload_pending: None,
@@ -188,28 +180,12 @@ impl Renderer {
         if width > limit || height > limit {
             return Err(error("surface dimensions exceed device limits"));
         }
-        self.depth = if width != 0 && height != 0 {
+        self.drawable = width != 0 && height != 0;
+        if self.drawable {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("scene depth"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: DEPTH_FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            Some(texture.create_view(&wgpu::TextureViewDescriptor::default()))
-        } else {
-            None
-        };
+        }
         self.failure.check()
     }
 
@@ -275,14 +251,13 @@ impl Renderer {
 
     pub fn draw(&mut self, frame: &Frame<'_>) -> Result<Option<FrameStats>, RendererError> {
         validation::frame(frame, self.limits, &self.textures)?;
-        self.meshes.prepare(frame)?;
         self.failure.check()?;
         if let Some(submission) = self.pending[self.next_submission].take() {
             self.failure.wait(&self.device, Some(submission))?;
         }
-        let Some(depth) = &self.depth else {
+        if !self.drawable {
             return Ok(None);
-        };
+        }
         let Some(viewport) =
             Viewport::new(frame.canvas_size, self.config.width, self.config.height)
         else {
@@ -308,48 +283,17 @@ impl Renderer {
         };
         self.queue
             .write_buffer(&self.vertices, 0, &self.geometry.bytes);
-        self.meshes.upload(&self.queue);
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor {
             format: Some(self.config.format.add_srgb_suffix()),
             ..Default::default()
         });
-        let commands = self.encode_frame(&view, depth, viewport);
-        self.pending[self.next_submission] = Some(self.queue.submit([commands]));
-        self.next_submission = (self.next_submission + 1) % FRAMES_IN_FLIGHT;
-        self.failure.check()?;
-        self.queue.present(output);
-        if suboptimal {
-            drop(view);
-            self.resize(self.config.width, self.config.height)?;
-        }
-        Ok(Some(FrameStats {
-            commands: frame.commands.len(),
-            quads: (self.geometry.bytes.len() / (4 * VERTEX_BYTES)).saturating_sub(1),
-            batches: 1
-                + self.meshes.draw_count()
-                + self
-                    .geometry
-                    .batches
-                    .iter()
-                    .filter(|batch| batch.end > 1)
-                    .count(),
-            vertex_bytes: self.geometry.bytes.len() + self.meshes.vertex_bytes(),
-        }))
-    }
-
-    fn encode_frame(
-        &self,
-        view: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-        viewport: Viewport,
-    ) -> wgpu::CommandBuffer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
+                    view: &view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -370,42 +314,7 @@ impl Renderer {
                 0.0,
                 1.0,
             );
-            let [x, y, width, height] = viewport.clip(None);
-            pass.set_scissor_rect(x, y, width, height);
-            pass.set_bind_group(0, &self.white.groups[0], &[]);
-            pass.draw_indexed(0..6, 0, 0..1);
-        }
-        self.encode_meshes(&mut encoder, view, depth, viewport);
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("HUD"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                ..Default::default()
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_vertex_buffer(0, self.vertices.slice(..));
-            pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.set_viewport(
-                viewport.x,
-                viewport.y,
-                viewport.width,
-                viewport.height,
-                0.0,
-                1.0,
-            );
             for batch in &self.geometry.batches {
-                let start = batch.start.max(1);
-                if start == batch.end {
-                    continue;
-                }
                 let texture = batch
                     .texture
                     .map_or(&self.white, |slot| self.textures[slot].as_ref().unwrap());
@@ -413,49 +322,23 @@ impl Renderer {
                 pass.set_bind_group(0, &texture.groups[sampler], &[]);
                 let [x, y, width, height] = batch.clip;
                 pass.set_scissor_rect(x, y, width, height);
-                pass.draw_indexed(start * 6..batch.end * 6, 0, 0..1);
+                pass.draw_indexed(batch.start * 6..batch.end * 6, 0, 0..1);
             }
         }
-        encoder.finish()
-    }
-
-    fn encode_meshes(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        depth: &wgpu::TextureView,
-        viewport: Viewport,
-    ) {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("opaque scene"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Discard,
-                }),
-                stencil_ops: None,
-            }),
-            ..Default::default()
-        });
-        pass.set_viewport(
-            viewport.x,
-            viewport.y,
-            viewport.width,
-            viewport.height,
-            0.0,
-            1.0,
-        );
-        self.meshes.draw(&mut pass, viewport);
+        self.pending[self.next_submission] = Some(self.queue.submit([encoder.finish()]));
+        self.next_submission = (self.next_submission + 1) % FRAMES_IN_FLIGHT;
+        self.failure.check()?;
+        self.queue.present(output);
+        if suboptimal {
+            drop(view);
+            self.resize(self.config.width, self.config.height)?;
+        }
+        Ok(Some(FrameStats {
+            commands: frame.commands.len(),
+            quads: (self.geometry.bytes.len() / (4 * VERTEX_BYTES)).saturating_sub(1),
+            batches: self.geometry.batches.len(),
+            vertex_bytes: self.geometry.bytes.len(),
+        }))
     }
 }
 

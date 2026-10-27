@@ -1,7 +1,7 @@
 # gamz
 
 gamz is a Rust game engine starter project for Linux. It includes
-a small 3D rendering benchmark.
+breakout as an example game.
 
 ## Build and run
 
@@ -32,7 +32,7 @@ Use `cargo build` in place of `cargo run` to build without launching, or add
 
 ## Make your game
 
-Replace the benchmark's state and logic in
+Replace breakout's state and logic in
 [crates/game/src/lib.rs](crates/game/src/lib.rs). Implement the
 [`platform_api::Game` trait](crates/platform-api/src/game.rs) for
 initialization, frame updates, and audio output. Keep your game's assets and

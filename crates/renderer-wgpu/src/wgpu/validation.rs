@@ -36,7 +36,6 @@ pub(super) fn frame(
     let mut quads = 0_usize;
     for command in frame.commands {
         let (valid, count) = match *command {
-            RenderCommand::SetCamera3D { .. } | RenderCommand::DrawMesh { .. } => (true, 0),
             RenderCommand::SetCamera { origin, zoom } => (point(origin) && positive(zoom), 0),
             RenderCommand::SetClip(clip) => (clip.is_none_or(rect), 0),
             RenderCommand::DrawRect {
