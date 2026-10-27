@@ -62,7 +62,8 @@ def validate(response, request=None):
                     for value in response["clear"]), "invalid clear color")
         require(isinstance(response["commands"], list) and len(response["commands"]) <= 16384 and
                 all(isinstance(command, dict) and command.get("type") in (
-                    "set_camera", "set_clip", "draw_rect", "draw_line", "draw_quads"
+                    "set_camera", "set_camera_3d", "set_clip", "draw_rect", "draw_line",
+                    "draw_quads", "draw_mesh"
                 ) for command in response["commands"]), "invalid command list or tag")
 
 

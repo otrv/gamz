@@ -1,7 +1,7 @@
 use math::{Rect, Vec2, Vec4};
 use platform_api::render::{Frame, RectStyle, RenderCommand};
 
-use crate::limits::{MAX_COMMANDS, MAX_QUADS};
+use crate::limits::{MAX_COMMANDS, MAX_MESH_INDICES, MAX_MESH_VERTICES, MAX_QUADS};
 
 pub(super) fn validate(frame: &Frame<'_>) -> Result<(), &'static str> {
     if !finite(frame.canvas_size)
@@ -12,9 +12,11 @@ pub(super) fn validate(frame: &Frame<'_>) -> Result<(), &'static str> {
     {
         return Err("invalid frame or command capacity exceeded");
     }
+    validate_meshes(frame)?;
     let mut quads = 0_usize;
     for command in frame.commands {
         let count = match *command {
+            RenderCommand::SetCamera3D { .. } | RenderCommand::DrawMesh { .. } => 0,
             RenderCommand::SetCamera { origin, zoom } => {
                 if !finite(origin) || !zoom.is_finite() || zoom <= 0.0 {
                     return Err("invalid camera");
@@ -88,6 +90,69 @@ pub(super) fn validate(frame: &Frame<'_>) -> Result<(), &'static str> {
             .checked_add(count)
             .filter(|&total| total <= MAX_QUADS)
             .ok_or("quad capacity exceeded")?;
+    }
+    Ok(())
+}
+
+fn validate_meshes(frame: &Frame<'_>) -> Result<(), &'static str> {
+    let mut mesh_vertices = 0;
+    let mut mesh_indices = 0;
+    let mut camera = None;
+    for command in frame.commands {
+        match *command {
+            RenderCommand::SetCamera3D { view_projection } => {
+                if !view_projection
+                    .to_cols_array()
+                    .into_iter()
+                    .all(f32::is_finite)
+                {
+                    return Err("invalid 3D camera");
+                }
+                camera = Some(view_projection);
+            }
+            RenderCommand::DrawMesh {
+                vertices,
+                indices,
+                model,
+            } => {
+                let camera = camera.ok_or("mesh requires a 3D camera")?;
+                if vertices.len() > MAX_MESH_VERTICES - mesh_vertices
+                    || indices.len() > MAX_MESH_INDICES - mesh_indices
+                {
+                    return Err("mesh capacity exceeded");
+                }
+                mesh_vertices += vertices.len();
+                mesh_indices += indices.len();
+                let transform = camera * model;
+                if !indices.len().is_multiple_of(3)
+                    || !model.to_cols_array().into_iter().all(f32::is_finite)
+                    || !transform.to_cols_array().into_iter().all(f32::is_finite)
+                {
+                    return Err("invalid mesh transform or triangle indices");
+                }
+                for vertex in vertices {
+                    let p = vertex.position;
+                    let clip = transform * Vec4::new(p.x, p.y, p.z, 1.0);
+                    if ![p.x, p.y, p.z, clip.x, clip.y, clip.z, clip.w]
+                        .into_iter()
+                        .all(f32::is_finite)
+                        || !color(vertex.color)
+                    {
+                        return Err("invalid opaque mesh vertex");
+                    }
+                }
+                for &index in indices {
+                    if usize::try_from(index).map_err(|_| "invalid mesh index")? >= vertices.len() {
+                        return Err("mesh index out of bounds");
+                    }
+                }
+            }
+            RenderCommand::SetCamera { .. }
+            | RenderCommand::SetClip(_)
+            | RenderCommand::DrawRect { .. }
+            | RenderCommand::DrawLine { .. }
+            | RenderCommand::DrawQuads { .. } => {}
+        }
     }
     Ok(())
 }

@@ -2,7 +2,7 @@ use math::{Rect, Vec4};
 use platform_api::audio::StereoSample;
 use platform_api::render;
 use platform_api::render::{
-    PixelRect, RectStyle, RenderCommand, Sampling, TextureId, TexturedQuad,
+    PixelRect, RectStyle, RenderCommand, Sampling, TextureId, TexturedQuad, Vertex3D,
 };
 use serde::{Serialize, Serializer};
 
@@ -130,6 +130,15 @@ impl Serialize for Commands<'_> {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Command<'a> {
+    #[serde(rename = "set_camera_3d")]
+    SetCamera3D {
+        view_projection: [f32; 16],
+    },
+    DrawMesh {
+        vertices: Vertices<'a>,
+        indices: &'a [u32],
+        model: [f32; 16],
+    },
     SetCamera {
         origin: [f32; 2],
         zoom: f32,
@@ -158,6 +167,18 @@ enum Command<'a> {
 impl<'a> From<&RenderCommand<'a>> for Command<'a> {
     fn from(command: &RenderCommand<'a>) -> Self {
         match *command {
+            RenderCommand::SetCamera3D { view_projection } => Self::SetCamera3D {
+                view_projection: view_projection.to_cols_array(),
+            },
+            RenderCommand::DrawMesh {
+                vertices,
+                indices,
+                model,
+            } => Self::DrawMesh {
+                vertices: Vertices(vertices),
+                indices,
+                model: model.to_cols_array(),
+            },
             RenderCommand::SetCamera { origin, zoom } => Self::SetCamera {
                 origin: [origin.x, origin.y],
                 zoom,
@@ -206,6 +227,23 @@ impl<'a> From<&RenderCommand<'a>> for Command<'a> {
                 sampling: sampling(mode),
             },
         }
+    }
+}
+
+struct Vertices<'a>(&'a [Vertex3D]);
+
+impl Serialize for Vertices<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Vertex {
+            position: [f32; 3],
+            color: [f32; 4],
+        }
+
+        serializer.collect_seq(self.0.iter().map(|vertex| Vertex {
+            position: [vertex.position.x, vertex.position.y, vertex.position.z],
+            color: color(vertex.color),
+        }))
     }
 }
 

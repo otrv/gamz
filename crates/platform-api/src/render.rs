@@ -1,4 +1,4 @@
-use math::{Radians, Rect, Vec2, Vec4};
+use math::{Mat4, Radians, Rect, Vec2, Vec3, Vec4};
 
 pub struct RenderCommands<'frame> {
     pub storage: &'frame mut [RenderCommand<'frame>],
@@ -13,6 +13,14 @@ pub struct Frame<'a> {
 
 #[derive(Clone, Copy)]
 pub enum RenderCommand<'a> {
+    SetCamera3D {
+        view_projection: Mat4,
+    },
+    DrawMesh {
+        vertices: &'a [Vertex3D],
+        indices: &'a [u32],
+        model: Mat4,
+    },
     SetCamera {
         origin: Vec2,
         zoom: f32,
@@ -34,6 +42,12 @@ pub enum RenderCommand<'a> {
         tint: Vec4,
         sampling: Sampling,
     },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Vertex3D {
+    pub position: Vec3,
+    pub color: Vec4,
 }
 
 #[derive(Clone, Copy, Debug)]

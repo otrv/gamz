@@ -38,7 +38,8 @@ use audio::Audio;
 use files::{Completions, Files};
 use input::InputState;
 use limits::{
-    MAX_COMMANDS, MAX_EVENTS, MAX_QUADS, MAX_TEXTURE_BYTES, MAX_TEXTURE_SIDE, MAX_TEXTURES,
+    MAX_COMMANDS, MAX_EVENTS, MAX_MESH_INDICES, MAX_MESH_VERTICES, MAX_QUADS, MAX_TEXTURE_BYTES,
+    MAX_TEXTURE_SIDE, MAX_TEXTURES,
 };
 use memory::{COMMAND_MEMORY_BYTES, PERSISTENT_MEMORY_BYTES, TRANSIENT_MEMORY_BYTES};
 use window::ModeRequests;
@@ -105,6 +106,8 @@ impl Context {
             Limits {
                 commands: MAX_COMMANDS,
                 quads: MAX_QUADS,
+                mesh_vertices: MAX_MESH_VERTICES,
+                mesh_indices: MAX_MESH_INDICES,
                 textures: MAX_TEXTURES,
                 texture_side: MAX_TEXTURE_SIDE,
                 texture_bytes: MAX_TEXTURE_BYTES,

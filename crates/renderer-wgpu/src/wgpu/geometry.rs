@@ -33,7 +33,7 @@ impl Viewport {
         })
     }
 
-    fn clip(self, rect: Option<Rect>) -> [u32; 4] {
+    pub(super) fn clip(self, rect: Option<Rect>) -> [u32; 4] {
         let width = f64::from(self.canvas.x);
         let height = f64::from(self.canvas.y);
         let [left, top, right, bottom] = rect.map_or([0.0, 0.0, width, height], |rect| {
@@ -124,6 +124,7 @@ impl Geometry {
         )?;
         for command in frame.commands {
             match *command {
+                RenderCommand::SetCamera3D { .. } | RenderCommand::DrawMesh { .. } => {}
                 RenderCommand::SetCamera { origin, zoom } => {
                     state.origin = origin;
                     state.zoom = zoom;
