@@ -11,6 +11,7 @@ use std::fmt;
 use wgpu::util::DeviceExt;
 
 const FRAMES_IN_FLIGHT: usize = 2;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -58,7 +59,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    drawable: bool,
+    depth: Option<wgpu::TextureView>,
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     samplers: [wgpu::Sampler; 2],
@@ -159,7 +160,7 @@ impl Renderer {
             device,
             queue,
             config,
-            drawable: false,
+            depth: None,
             pipeline,
             layout,
             samplers,
@@ -187,12 +188,28 @@ impl Renderer {
         if width > limit || height > limit {
             return Err(error("surface dimensions exceed device limits"));
         }
-        self.drawable = width != 0 && height != 0;
-        if self.drawable {
+        self.depth = if width != 0 && height != 0 {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
-        }
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("scene depth"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            Some(texture.create_view(&wgpu::TextureViewDescriptor::default()))
+        } else {
+            None
+        };
         self.failure.check()
     }
 
@@ -263,9 +280,9 @@ impl Renderer {
         if let Some(submission) = self.pending[self.next_submission].take() {
             self.failure.wait(&self.device, Some(submission))?;
         }
-        if !self.drawable {
+        let Some(depth) = &self.depth else {
             return Ok(None);
-        }
+        };
         let Some(viewport) =
             Viewport::new(frame.canvas_size, self.config.width, self.config.height)
         else {
@@ -296,7 +313,7 @@ impl Renderer {
             format: Some(self.config.format.add_srgb_suffix()),
             ..Default::default()
         });
-        let commands = self.encode_frame(&view, viewport);
+        let commands = self.encode_frame(&view, depth, viewport);
         self.pending[self.next_submission] = Some(self.queue.submit([commands]));
         self.next_submission = (self.next_submission + 1) % FRAMES_IN_FLIGHT;
         self.failure.check()?;
@@ -320,7 +337,12 @@ impl Renderer {
         }))
     }
 
-    fn encode_frame(&self, view: &wgpu::TextureView, viewport: Viewport) -> wgpu::CommandBuffer {
+    fn encode_frame(
+        &self,
+        view: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        viewport: Viewport,
+    ) -> wgpu::CommandBuffer {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
@@ -352,10 +374,33 @@ impl Renderer {
             pass.set_scissor_rect(x, y, width, height);
             pass.set_bind_group(0, &self.white.groups[0], &[]);
             pass.draw_indexed(0..6, 0, 0..1);
-            self.meshes.draw(&mut pass, viewport);
+        }
+        self.encode_meshes(&mut encoder, view, depth, viewport);
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("HUD"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
             pass.set_pipeline(&self.pipeline);
             pass.set_vertex_buffer(0, self.vertices.slice(..));
             pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+            pass.set_viewport(
+                viewport.x,
+                viewport.y,
+                viewport.width,
+                viewport.height,
+                0.0,
+                1.0,
+            );
             for batch in &self.geometry.batches {
                 let start = batch.start.max(1);
                 if start == batch.end {
@@ -372,6 +417,45 @@ impl Renderer {
             }
         }
         encoder.finish()
+    }
+
+    fn encode_meshes(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        viewport: Viewport,
+    ) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("opaque scene"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+        pass.set_viewport(
+            viewport.x,
+            viewport.y,
+            viewport.width,
+            viewport.height,
+            0.0,
+            1.0,
+        );
+        self.meshes.draw(&mut pass, viewport);
     }
 }
 

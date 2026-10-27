@@ -2,7 +2,7 @@ use math::Vec4;
 use platform_api::render::{Frame, RenderCommand};
 
 use super::geometry::Viewport;
-use super::{Limits, RendererError, error};
+use super::{DEPTH_FORMAT, Limits, RendererError, error};
 
 const VERTEX_BYTES: usize = 28;
 const MATRIX_BYTES: usize = 64;
@@ -92,7 +92,13 @@ impl Meshes {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,

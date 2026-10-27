@@ -1,6 +1,7 @@
 use core::ops::Mul;
 
 use glam::camera::lh::proj::directx;
+use glam::camera::lh::view;
 
 use crate::{Radians, Vec3, Vec4};
 
@@ -17,6 +18,25 @@ impl Mat4 {
             translation.y,
             translation.z,
         )))
+    }
+
+    #[must_use]
+    pub fn look_at_lh(eye: Vec3, target: Vec3, up: Vec3) -> Self {
+        let eye = glam::Vec3::new(eye.x, eye.y, eye.z);
+        let target = glam::Vec3::new(target.x, target.y, target.z);
+        let up = glam::Vec3::new(up.x, up.y, up.z);
+        assert!(eye.is_finite() && target.is_finite());
+        assert!(up.is_normalized());
+        let direction = (target - eye)
+            .try_normalize()
+            .expect("camera eye and target define a finite nonzero direction");
+        assert!(
+            up.cross(direction).length_squared() > 0.0,
+            "camera up must not be parallel to the view direction"
+        );
+        let matrix = view::look_to_mat4(eye, direction, up);
+        assert!(matrix.is_finite());
+        Self(matrix)
     }
 
     #[must_use]
@@ -53,6 +73,48 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use crate::{Mat4, Radians, Vec3, Vec4};
+
+    #[test]
+    fn left_handed_view_places_eye_at_origin_and_target_in_front() {
+        let view = Mat4::look_at_lh(
+            Vec3::new(2.0, 4.0, -3.0),
+            Vec3::new(2.0, 1.0, 1.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+        for (point, expected) in [
+            (Vec4::new(2.0, 4.0, -3.0, 1.0), [0.0, 0.0, 0.0, 1.0]),
+            (Vec4::new(2.0, 1.0, 1.0, 1.0), [0.0, 0.0, 5.0, 1.0]),
+            (Vec4::new(5.0, 4.0, -3.0, 1.0), [3.0, 0.0, 0.0, 1.0]),
+            (Vec4::new(2.0, 8.0, 0.0, 1.0), [0.0, 5.0, 0.0, 1.0]),
+        ] {
+            let actual = view * point;
+            for (actual, expected) in [actual.x, actual.y, actual.z, actual.w]
+                .into_iter()
+                .zip(expected)
+            {
+                assert!((actual - expected).abs() < 1e-6);
+            }
+        }
+        let sideways = Mat4::look_at_lh(
+            Vec3::new(1.0, 2.0, 3.0),
+            Vec3::new(5.0, 2.0, 3.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+        assert_eq!(
+            sideways * Vec4::new(6.0, 4.0, 0.0, 1.0),
+            Vec4::new(3.0, 2.0, 5.0, 1.0)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "camera up must not be parallel to the view direction")]
+    fn view_rejects_up_parallel_to_direction() {
+        let _ = Mat4::look_at_lh(
+            Vec3::new(1.0, 2.0, 3.0),
+            Vec3::new(1.0, 4.0, 3.0),
+            Vec3::new(0.0, 1.0, 0.0),
+        );
+    }
 
     #[test]
     fn left_handed_projection_preserves_perspective_and_zero_to_one_depth() {

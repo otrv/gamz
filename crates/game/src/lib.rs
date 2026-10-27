@@ -1,47 +1,28 @@
 #![no_std]
 
 mod hud;
+mod scene;
 
 use core::mem::{align_of, size_of};
 
 use game_core::font::Font;
-use game_core::render::{self, RenderError};
-use math::{Mat4, Radians, Vec2, Vec3, Vec4};
+use game_core::render::RenderError;
+use math::{Vec2, Vec4};
 use memory::Arena;
 use platform_api::audio::StereoSample;
 use platform_api::input::{ButtonPosition, Input, PlatformEvent};
 use platform_api::memory::{PersistentMemory, TransientMemory};
-use platform_api::render::{
-    Frame, RenderCommand, RenderCommands, TextureId, TextureUpload, TexturedQuad, Vertex3D,
-};
+use platform_api::render::{Frame, RenderCommands, TextureId, TextureUpload, TexturedQuad};
 use platform_api::{FrameError, Game, Platform, StartupError};
+use scene::DrawOrder;
 
-const NEAR_LABEL: &str = "NEAR TRIANGLE   PRESS START";
-const AWAY_LABEL: &str = "AWAY TRIANGLE   PRESS START";
-const TRIANGLE: [Vertex3D; 3] = [
-    Vertex3D {
-        position: Vec3::new(-1.5, -1.0, 0.0),
-        color: Vec4::new(1.0, 0.25, 0.2, 1.0),
-    },
-    Vertex3D {
-        position: Vec3::new(0.0, 1.0, 0.0),
-        color: Vec4::new(0.2, 1.0, 0.5, 1.0),
-    },
-    Vertex3D {
-        position: Vec3::new(1.5, -1.0, 0.0),
-        color: Vec4::new(0.3, 0.4, 1.0, 1.0),
-    },
-];
-
-enum Distance {
-    Near,
-    Away,
-}
+const NORMAL_LABEL: &str = "NORMAL   PRESS START TO REVERSE";
+const REVERSE_LABEL: &str = "REVERSE   PRESS START TO RESTORE";
 
 pub struct GameState {
     font: Font,
     transient_capacity: usize,
-    distance: Distance,
+    draw_order: DrawOrder,
 }
 
 impl Game for GameState {
@@ -57,7 +38,8 @@ impl Game for GameState {
                 available: memory.bytes.len(),
             });
         }
-        let required_transient = size_of::<TexturedQuad>() * NEAR_LABEL.len().max(AWAY_LABEL.len())
+        let required_transient = size_of::<TexturedQuad>()
+            * NORMAL_LABEL.len().max(REVERSE_LABEL.len())
             + align_of::<TexturedQuad>()
             - 1;
         if transient_capacity < required_transient {
@@ -69,7 +51,7 @@ impl Game for GameState {
         let state = Self {
             font: hud::font().map_err(|_| StartupError::Game { code: 1 })?,
             transient_capacity,
-            distance: Distance::Near,
+            draw_order: DrawOrder::Forward,
         };
         let image = hud::image();
         (platform.upload_texture)(
@@ -107,9 +89,9 @@ impl Game for GameState {
                 button.ended == ButtonPosition::Down && !button.half_transitions.is_multiple_of(2),
             );
         if !presses.is_multiple_of(2) {
-            self.distance = match self.distance {
-                Distance::Near => Distance::Away,
-                Distance::Away => Distance::Near,
+            self.draw_order = match self.draw_order {
+                DrawOrder::Forward => DrawOrder::Reverse,
+                DrawOrder::Reverse => DrawOrder::Forward,
             };
         }
         draw(self, memory, commands).map_err(|RenderError::CommandCapacityExceeded| {
@@ -129,29 +111,11 @@ fn draw<'frame>(
 ) -> Result<Frame<'frame>, RenderError> {
     let TransientMemory { bytes } = memory;
     let mut arena = Arena::new(bytes);
-    let (distance, label) = match state.distance {
-        Distance::Near => (3.0, NEAR_LABEL),
-        Distance::Away => (6.0, AWAY_LABEL),
+    let label = match state.draw_order {
+        DrawOrder::Forward => NORMAL_LABEL,
+        DrawOrder::Reverse => REVERSE_LABEL,
     };
-    render::push(
-        &mut commands,
-        RenderCommand::SetCamera3D {
-            view_projection: Mat4::perspective_lh(
-                Radians::new(core::f32::consts::FRAC_PI_2),
-                1280.0 / 720.0,
-                0.1,
-                100.0,
-            ),
-        },
-    )?;
-    render::push(
-        &mut commands,
-        RenderCommand::DrawMesh {
-            vertices: &TRIANGLE,
-            indices: &[0, 1, 2],
-            model: Mat4::from_translation(Vec3::new(0.0, 0.0, distance)),
-        },
-    )?;
+    scene::draw(&state.draw_order, &mut commands)?;
     hud::draw(
         &state.font,
         label,

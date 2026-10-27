@@ -37,10 +37,18 @@ The agreed coordinate convention matches Unity's world axes: left-handed,
 +Y up, +Z forward. Keep the 1280×720 letterboxed canvas. Use generic indexed
 triangles, with opaque 3D rendered before the existing 2D HUD.
 
-The first learning step replaces Breakout with a perspective colored triangle.
-Start (Space on Linux) switches between two distances to demonstrate perspective
-without changing the mesh or HUD size. Floor geometry, cubes, depth occlusion,
-player movement, and the following camera remain to be implemented.
+The perspective triangle and static scene steps are complete. The static scene
+adds a floor and four colored cubes, with a fixed camera and depth occlusion.
+Start (Space on Linux) reverses mesh submission order to check that visibility
+does not depend on draw order. Both orders and window resizing are verified
+with the Linux software renderer. Physical GPU behavior remains unverified.
+
+Keep scene geometry and camera placement in `game`, camera transforms in `math`,
+and depth storage in `renderer-wgpu`. Use the existing render commands. Cube
+faces use preset colors rather than lighting, and the HUD renders without depth.
+
+The next step adds the box-shaped player, WASD movement, and the following camera.
+Movement speed and the camera offset remain to be chosen before that step.
 
 ## 2. A repeatable rendering baseline
 
